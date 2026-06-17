@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Noovel">
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <title>Noovel Reader</title>
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ヘッダー -->
+  <header id="header">
+    <button id="btn-open">ファイルを開く</button>
+    <h1>Noovel</h1>
+    <button id="btn-settings">設定</button>
+  </header>
+
+  <!-- プログレスバー -->
+  <div id="progress"><div id="progress-bar"></div></div>
+
+  <!-- リーダー -->
+  <div id="reader-wrap">
+    <div id="empty">
+      <p>📖</p>
+      <p>「ファイルを開く」から<br>テキストファイルを読み込んでください</p>
+    </div>
+    <div id="reader"></div>
+  </div>
+
+</div>
+
+<!-- 設定パネル -->
+<div id="settings-panel" class="hidden">
+  <div id="settings-inner">
+    <strong>表示設定</strong>
+
+    <!-- テーマ -->
+    <div>
+      <div style="font-size:14px;margin-bottom:8px;">テーマ</div>
+      <div class="themes">
+        <button class="theme-btn" data-theme="warm">温白</button>
+        <button class="theme-btn" data-theme="white">白</button>
+        <button class="theme-btn" data-theme="sepia">セピア</button>
+        <button class="theme-btn" data-theme="dark">ダーク</button>
+      </div>
+    </div>
+
+    <!-- 文字サイズ -->
+    <div class="setting-row">
+      <label>文字サイズ <span id="val-font-size">18</span>px</label>
+      <input type="range" id="range-font-size" min="12" max="32" step="1" value="18">
+    </div>
+
+    <!-- 行間 -->
+    <div class="setting-row">
+      <label>行間 <span id="val-line-height">2.0</span></label>
+      <input type="range" id="range-line-height" min="1.2" max="3.0" step="0.1" value="2.0">
+    </div>
+
+    <!-- フォント -->
+    <div class="setting-row">
+      <label>フォント</label>
+      <select id="sel-font">
+        <option value="serif">明朝体</option>
+        <option value="gothic">ゴシック体</option>
+        <option value="rounded">丸ゴシック</option>
+      </select>
+    </div>
+
+    <!-- 背景色・文字色 -->
+    <div class="setting-row">
+      <label>背景色</label>
+      <input type="color" id="pick-bg" value="#f5f0e8">
+    </div>
+    <div class="setting-row">
+      <label>文字色</label>
+      <input type="color" id="pick-text" value="#333333">
+    </div>
+
+    <!-- 縦書き -->
+    <div class="toggle-row">
+      <label>縦書き</label>
+      <label class="switch">
+        <input type="checkbox" id="tog-vertical">
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <button id="btn-close-settings">閉じる</button>
+  </div>
+</div>
+
+<!-- ファイル入力（非表示） -->
+<input type="file" id="file-input" accept=".txt,.md,.text" style="display:none">
+
+<script src="./js/app.js"></script>
+</body>
+</html>

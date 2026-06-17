@@ -1,0 +1,22 @@
+{
+  "name": "Noovel Reader",
+  "short_name": "Noovel",
+  "description": "テキストを自分好みに読めるリーダー",
+  "start_url": "/appNoovel/",
+  "display": "standalone",
+  "background_color": "#f5f0e8",
+  "theme_color": "#333333",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

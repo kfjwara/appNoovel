@@ -1,0 +1,176 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg: #f5f0e8;
+  --text: #333;
+  --font-size: 18px;
+  --line-height: 2;
+  --font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* ===== 画面構成 ===== */
+#app { display: flex; flex-direction: column; height: 100dvh; }
+
+/* ヘッダー */
+#header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: rgba(0,0,0,.06);
+  flex-shrink: 0;
+}
+#header h1 { font-size: 16px; font-weight: bold; }
+#btn-settings, #btn-open {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  color: inherit;
+}
+
+/* リーダー本体 */
+#reader-wrap {
+  flex: 1;
+  overflow: auto;
+  padding: 32px 20px;
+  -webkit-overflow-scrolling: touch;
+}
+
+#reader {
+  max-width: 680px;
+  margin: 0 auto;
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  line-height: var(--line-height);
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 縦書きモード */
+#reader.vertical {
+  writing-mode: vertical-rl;
+  max-width: none;
+  max-height: 100%;
+  height: max-content;
+  margin: 0 auto;
+}
+
+/* 空状態 */
+#empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  opacity: .5;
+  font-size: 15px;
+  text-align: center;
+}
+#empty.hidden { display: none; }
+
+/* ===== 設定パネル ===== */
+#settings-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 100;
+}
+#settings-panel.hidden { display: none; }
+
+#settings-inner {
+  width: 100%;
+  background: var(--bg);
+  border-radius: 16px 16px 0 0;
+  padding: 24px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.setting-row label { font-size: 14px; min-width: 80px; }
+.setting-row input[type=range] { flex: 1; }
+.setting-row input[type=color] { width: 40px; height: 32px; border: none; border-radius: 6px; cursor: pointer; }
+.setting-row select { flex: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid #ccc; background: white; font-size: 14px; }
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.toggle-row label { font-size: 14px; }
+
+/* トグルスイッチ */
+.switch { position: relative; width: 44px; height: 26px; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .slider {
+  position: absolute;
+  inset: 0;
+  background: #ccc;
+  border-radius: 26px;
+  transition: .3s;
+  cursor: pointer;
+}
+.switch .slider:before {
+  content: '';
+  position: absolute;
+  width: 20px; height: 20px;
+  left: 3px; top: 3px;
+  background: white;
+  border-radius: 50%;
+  transition: .3s;
+}
+.switch input:checked + .slider { background: #555; }
+.switch input:checked + .slider:before { transform: translateX(18px); }
+
+#btn-close-settings {
+  background: #555;
+  color: white;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 15px;
+  cursor: pointer;
+  margin-top: 4px;
+}
+
+/* テーマプリセット */
+.themes { display: flex; gap: 8px; flex-wrap: wrap; }
+.theme-btn {
+  padding: 6px 12px;
+  border-radius: 20px;
+  border: 1px solid #ccc;
+  font-size: 13px;
+  cursor: pointer;
+}
+.theme-btn.active { border-color: #555; font-weight: bold; }
+
+/* プログレスバー */
+#progress {
+  height: 3px;
+  background: rgba(0,0,0,.15);
+  flex-shrink: 0;
+}
+#progress-bar {
+  height: 100%;
+  background: #888;
+  width: 0%;
+  transition: width .1s;
+}
