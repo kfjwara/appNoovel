@@ -8,13 +8,9 @@
   --font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
 }
 
-html, body {
-  height: 100%;
-  background: var(--bg);
-  color: var(--text);
-}
+html, body { height: 100%; background: var(--bg); color: var(--text); }
 
-/* ===== 画面構成 ===== */
+/* ===== レイアウト ===== */
 #app { display: flex; flex-direction: column; height: 100dvh; }
 
 /* ヘッダー */
@@ -27,7 +23,7 @@ html, body {
   flex-shrink: 0;
 }
 #header h1 { font-size: 16px; font-weight: bold; }
-#btn-settings, #btn-open {
+#btn-settings, #btn-left {
   background: none;
   border: 1px solid currentColor;
   border-radius: 6px;
@@ -35,9 +31,10 @@ html, body {
   font-size: 14px;
   cursor: pointer;
   color: inherit;
+  white-space: nowrap;
 }
 
-/* リーダー本体 */
+/* リーダー */
 #reader-wrap {
   flex: 1;
   overflow: auto;
@@ -51,17 +48,32 @@ html, body {
   font-family: var(--font-family);
   font-size: var(--font-size);
   line-height: var(--line-height);
-  white-space: pre-wrap;
-  word-break: break-all;
 }
 
-/* 縦書きモード */
+/* 縦書き */
 #reader.vertical {
   writing-mode: vertical-rl;
   max-width: none;
   max-height: 100%;
   height: max-content;
   margin: 0 auto;
+}
+
+/* 章タイトル */
+.chapter-title {
+  font-size: calc(var(--font-size) * 1.15);
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 2em;
+  padding-bottom: 1em;
+  border-bottom: 1px solid currentColor;
+  opacity: 0.75;
+}
+
+/* 本文 */
+.chapter-body {
+  white-space: pre-wrap;
+  word-break: break-all;
 }
 
 /* 空状態 */
@@ -78,8 +90,56 @@ html, body {
 }
 #empty.hidden { display: none; }
 
-/* ===== 設定パネル ===== */
-#settings-panel {
+/* ===== 章ナビ ===== */
+#chapter-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: rgba(0,0,0,.06);
+  flex-shrink: 0;
+}
+#chapter-nav.hidden { display: none; }
+
+#btn-prev-ch, #btn-next-ch {
+  background: none;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  padding: 6px 18px;
+  font-size: 20px;
+  cursor: pointer;
+  color: inherit;
+  line-height: 1;
+}
+#btn-prev-ch:disabled, #btn-next-ch:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+#chapter-nav-info {
+  flex: 1;
+  text-align: center;
+  padding: 0 12px;
+  min-width: 0;
+}
+#ch-title-nav {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#ch-counter {
+  font-size: 11px;
+  opacity: 0.55;
+  margin-top: 2px;
+}
+
+/* ===== プログレスバー ===== */
+#progress { height: 3px; background: rgba(0,0,0,.15); flex-shrink: 0; }
+#progress-bar { height: 100%; background: #888; width: 0%; transition: width .1s; }
+
+/* ===== 共通パネル（設定・目次）===== */
+.panel-overlay {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,.5);
@@ -87,8 +147,18 @@ html, body {
   align-items: flex-end;
   z-index: 100;
 }
-#settings-panel.hidden { display: none; }
 
+#settings-panel, #toc-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 100;
+}
+#settings-panel.hidden, #toc-panel.hidden { display: none; }
+
+/* 設定パネル内側 */
 #settings-inner {
   width: 100%;
   background: var(--bg);
@@ -98,6 +168,8 @@ html, body {
   flex-direction: column;
   gap: 20px;
 }
+
+.panel-label { font-size: 14px; margin-bottom: 8px; }
 
 .setting-row {
   display: flex;
@@ -110,67 +182,72 @@ html, body {
 .setting-row input[type=color] { width: 40px; height: 32px; border: none; border-radius: 6px; cursor: pointer; }
 .setting-row select { flex: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid #ccc; background: white; font-size: 14px; }
 
-.toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
+.toggle-row { display: flex; align-items: center; justify-content: space-between; }
 .toggle-row label { font-size: 14px; }
 
-/* トグルスイッチ */
+/* トグル */
 .switch { position: relative; width: 44px; height: 26px; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch .slider {
-  position: absolute;
-  inset: 0;
-  background: #ccc;
-  border-radius: 26px;
-  transition: .3s;
-  cursor: pointer;
+  position: absolute; inset: 0;
+  background: #ccc; border-radius: 26px; transition: .3s; cursor: pointer;
 }
 .switch .slider:before {
-  content: '';
-  position: absolute;
-  width: 20px; height: 20px;
-  left: 3px; top: 3px;
-  background: white;
-  border-radius: 50%;
-  transition: .3s;
+  content: ''; position: absolute;
+  width: 20px; height: 20px; left: 3px; top: 3px;
+  background: white; border-radius: 50%; transition: .3s;
 }
 .switch input:checked + .slider { background: #555; }
 .switch input:checked + .slider:before { transform: translateX(18px); }
 
 #btn-close-settings {
-  background: #555;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  padding: 12px;
-  font-size: 15px;
-  cursor: pointer;
-  margin-top: 4px;
+  background: #555; color: white; border: none;
+  border-radius: 10px; padding: 12px; font-size: 15px; cursor: pointer; margin-top: 4px;
 }
 
-/* テーマプリセット */
 .themes { display: flex; gap: 8px; flex-wrap: wrap; }
 .theme-btn {
-  padding: 6px 12px;
-  border-radius: 20px;
-  border: 1px solid #ccc;
-  font-size: 13px;
-  cursor: pointer;
+  padding: 6px 12px; border-radius: 20px;
+  border: 1px solid #ccc; font-size: 13px; cursor: pointer;
 }
 .theme-btn.active { border-color: #555; font-weight: bold; }
 
-/* プログレスバー */
-#progress {
-  height: 3px;
-  background: rgba(0,0,0,.15);
+/* ===== 目次パネル ===== */
+#toc-inner {
+  width: 100%;
+  max-height: 72vh;
+  background: var(--bg);
+  border-radius: 16px 16px 0 0;
+  padding: 20px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#toc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   flex-shrink: 0;
 }
-#progress-bar {
-  height: 100%;
-  background: #888;
-  width: 0%;
-  transition: width .1s;
+#toc-header strong { font-size: 15px; }
+
+#btn-close-toc {
+  background: none; border: none;
+  font-size: 18px; cursor: pointer; color: inherit; padding: 4px 8px;
 }
+
+#toc-list {
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.toc-item {
+  background: none; border: none; border-bottom: 1px solid rgba(0,0,0,.08);
+  text-align: left; padding: 12px 8px;
+  font-size: 14px; cursor: pointer; color: inherit;
+  font-family: var(--font-family);
+}
+.toc-item:last-child { border-bottom: none; }
+.toc-item.active { font-weight: bold; background: rgba(0,0,0,.05); }
