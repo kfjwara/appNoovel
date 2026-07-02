@@ -23,9 +23,12 @@
   <div id="progress"><div id="progress-bar"></div></div>
 
   <div id="reader-wrap">
-    <div id="empty">
-      <p>📖</p>
-      <p>「開く」からテキストファイルを<br>読み込んでください</p>
+    <div id="shelf">
+      <div id="shelf-empty">
+        <p>📖</p>
+        <p>「開く」からテキストファイルを<br>読み込んでください</p>
+      </div>
+      <div id="shelf-list"></div>
     </div>
     <div id="reader"></div>
   </div>
@@ -104,6 +107,7 @@
       <button id="btn-close-toc">✕</button>
     </div>
     <div id="toc-list"></div>
+    <button id="btn-to-shelf">‹ 本棚へ戻る</button>
   </div>
 </div>
 

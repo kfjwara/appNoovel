@@ -1,14 +1,40 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* ===== カラー設計 =====
+   --bg / --text        … 本文（読書コンテンツ）専用。ユーザーが自由に変えられる
+   --ui-*               … ヘッダー・ナビ・パネル・本棚などのUI。明暗2モードのみ。
+                          本文背景の輝度から app.js が body[data-ui] を自動切替する */
 :root {
   --bg: #f5f0e8;
   --text: #333;
   --font-size: 18px;
   --line-height: 2;
   --font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+
+  /* UI 既定（ライト） */
+  --ui-bg: #f2f1ef;
+  --ui-panel: #ffffff;
+  --ui-text: #333;
+  --ui-line: rgba(0,0,0,.1);
+  --ui-active: rgba(0,0,0,.06);
+  --ui-border: #ccc;
+  --ui-input-bg: #fff;
 }
 
-html, body { height: 100%; background: var(--bg); color: var(--text); }
+body[data-ui="dark"] {
+  --ui-bg: #222;
+  --ui-panel: #2e2e2e;
+  --ui-text: #ddd;
+  --ui-line: rgba(255,255,255,.14);
+  --ui-active: rgba(255,255,255,.09);
+  --ui-border: #555;
+  --ui-input-bg: #3a3a3a;
+}
+
+html, body { height: 100%; background: var(--bg); }
+body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
+
+.hidden { display: none !important; }
 
 /* ===== レイアウト ===== */
 #app { display: flex; flex-direction: column; height: 100dvh; }
@@ -19,7 +45,8 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: rgba(0,0,0,.06);
+  background: var(--ui-bg);
+  color: var(--ui-text);
   flex-shrink: 0;
 }
 #header h1 { font-size: 16px; font-weight: bold; }
@@ -39,6 +66,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
   flex: 1;
   overflow: auto;
   padding: 32px 20px;
+  color: var(--text);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -76,19 +104,81 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
   word-break: break-all;
 }
 
-/* 空状態 */
-#empty {
+/* ===== 本棚 ===== */
+#shelf { max-width: 680px; margin: 0 auto; }
+
+#shelf-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 100%;
+  min-height: 55vh;
   gap: 16px;
   opacity: .5;
   font-size: 15px;
   text-align: center;
 }
-#empty.hidden { display: none; }
+
+#shelf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.book-card {
+  display: flex;
+  align-items: stretch;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  border-radius: 12px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  overflow: hidden;
+}
+
+.book-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  background: none;
+  border: none;
+  text-align: left;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.book-title {
+  font-size: 15px;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.book-meta { font-size: 12px; opacity: .6; }
+
+.book-progress {
+  height: 4px;
+  background: var(--ui-line);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 2px;
+}
+.book-progress-fill { height: 100%; background: #888; }
+
+.book-delete {
+  background: none;
+  border: none;
+  border-left: 1px solid var(--ui-line);
+  padding: 0 16px;
+  color: inherit;
+  opacity: .45;
+  font-size: 14px;
+  cursor: pointer;
+}
 
 /* ===== 章ナビ ===== */
 #chapter-nav {
@@ -96,10 +186,10 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: rgba(0,0,0,.06);
+  background: var(--ui-bg);
+  color: var(--ui-text);
   flex-shrink: 0;
 }
-#chapter-nav.hidden { display: none; }
 
 #btn-prev-ch, #btn-next-ch {
   background: none;
@@ -135,19 +225,10 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
 }
 
 /* ===== プログレスバー ===== */
-#progress { height: 3px; background: rgba(0,0,0,.15); flex-shrink: 0; }
+#progress { height: 3px; background: var(--ui-line); flex-shrink: 0; }
 #progress-bar { height: 100%; background: #888; width: 0%; transition: width .1s; }
 
 /* ===== 共通パネル（設定・目次）===== */
-.panel-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,.5);
-  display: flex;
-  align-items: flex-end;
-  z-index: 100;
-}
-
 #settings-panel, #toc-panel {
   position: fixed;
   inset: 0;
@@ -156,12 +237,12 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
   align-items: flex-end;
   z-index: 100;
 }
-#settings-panel.hidden, #toc-panel.hidden { display: none; }
 
 /* 設定パネル内側 */
 #settings-inner {
   width: 100%;
-  background: var(--bg);
+  background: var(--ui-panel);
+  color: var(--ui-text);
   border-radius: 16px 16px 0 0;
   padding: 24px 20px 40px;
   display: flex;
@@ -180,7 +261,15 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
 .setting-row label { font-size: 14px; min-width: 80px; }
 .setting-row input[type=range] { flex: 1; }
 .setting-row input[type=color] { width: 40px; height: 32px; border: none; border-radius: 6px; cursor: pointer; }
-.setting-row select { flex: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid #ccc; background: white; font-size: 14px; }
+.setting-row select {
+  flex: 1;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--ui-border);
+  background: var(--ui-input-bg);
+  color: inherit;
+  font-size: 14px;
+}
 
 .toggle-row { display: flex; align-items: center; justify-content: space-between; }
 .toggle-row label { font-size: 14px; }
@@ -208,15 +297,18 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
 .themes { display: flex; gap: 8px; flex-wrap: wrap; }
 .theme-btn {
   padding: 6px 12px; border-radius: 20px;
-  border: 1px solid #ccc; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--ui-border);
+  background: none; color: inherit;
+  font-size: 13px; cursor: pointer;
 }
-.theme-btn.active { border-color: #555; font-weight: bold; }
+.theme-btn.active { border-color: currentColor; font-weight: bold; }
 
 /* ===== 目次パネル ===== */
 #toc-inner {
   width: 100%;
   max-height: 72vh;
-  background: var(--bg);
+  background: var(--ui-panel);
+  color: var(--ui-text);
   border-radius: 16px 16px 0 0;
   padding: 20px 20px 40px;
   display: flex;
@@ -237,6 +329,17 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
   font-size: 18px; cursor: pointer; color: inherit; padding: 4px 8px;
 }
 
+#btn-to-shelf {
+  background: none;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 14px;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
 #toc-list {
   overflow-y: auto;
   display: flex;
@@ -244,10 +347,10 @@ html, body { height: 100%; background: var(--bg); color: var(--text); }
 }
 
 .toc-item {
-  background: none; border: none; border-bottom: 1px solid rgba(0,0,0,.08);
+  background: none; border: none; border-bottom: 1px solid var(--ui-line);
   text-align: left; padding: 12px 8px;
   font-size: 14px; cursor: pointer; color: inherit;
   font-family: var(--font-family);
 }
 .toc-item:last-child { border-bottom: none; }
-.toc-item.active { font-weight: bold; background: rgba(0,0,0,.05); }
+.toc-item.active { font-weight: bold; background: var(--ui-active); }
