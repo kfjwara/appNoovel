@@ -85,51 +85,43 @@ async function dbDelete(id) {
   });
 }
 
-// ===== Chapter parsing =====
-function parseChapters(text, filename) {
-  const lines = text.split('\n');
+// ===== Import (parsing lives in convert.js) =====
+function decodeBuffer(buf) {
+  try { return { text: new TextDecoder('utf-8', { fatal: true }).decode(buf), enc: 'utf-8' }; }
+  catch (e) { return { text: new TextDecoder('shift_jis').decode(buf), enc: 'shift_jis' }; }
+}
 
-  // Explicit heading patterns
-  const EXPLICIT = /^(第[一二三四五六七八九十百千\d]+[章話節部編幕序終]|#{1,3}\s+\S|【.+】|[■◆●▲]\s*\S)/;
-
-  let headings = lines.reduce((acc, line, i) => {
-    if (EXPLICIT.test(line.trim())) acc.push(i);
-    return acc;
-  }, []);
-
-  // Fallback: short lines surrounded by blank lines
-  if (headings.length < 2) {
-    headings = lines.reduce((acc, line, i) => {
-      const t = line.trim();
-      if (!t || t.length > 40) return acc;
-      if (/[。、！？…」』）】]$/.test(t)) return acc;
-      const prevBlank = i === 0 || !lines[i - 1].trim();
-      const nextBlank = i === lines.length - 1 || !lines[i + 1].trim();
-      if (prevBlank && nextBlank) acc.push(i);
-      return acc;
-    }, []);
+function importContent(raw, name, encWarning) {
+  const stem = name.replace(/\.[^.]+$/, '');
+  const ext = ((name.match(/\.([^.]+)$/) || [])[1] || '').toLowerCase();
+  let res;
+  if (ext === 'noovel') {
+    const r = parseNoovelJSON(raw);
+    if (r.error) {
+      res = convertText(raw, stem);
+      res.warnings.unshift(`.noovel の検証に通らなかったため自動整形で取り込みました（${r.error}）`);
+    } else {
+      res = r;
+    }
+  } else {
+    res = convertText(raw, stem);
   }
+  if (encWarning) res.warnings.unshift(encWarning);
+  if (res.warnings.length) alert('取り込みメモ：\n・' + res.warnings.join('\n・'));
 
-  const stem = filename.replace(/\.[^.]+$/, '');
-
-  if (headings.length < 2) {
-    return { title: stem, chapters: [{ title: stem, content: text.trim() }] };
-  }
-
-  const chapters = [];
-
-  // Content before first heading
-  const pre = lines.slice(0, headings[0]).join('\n').trim();
-  if (pre) chapters.push({ title: 'まえがき', content: pre });
-
-  headings.forEach((hIdx, i) => {
-    const nextHIdx = headings[i + 1] ?? lines.length;
-    const chTitle = lines[hIdx].trim().replace(/^#+\s*/, '');
-    const content = lines.slice(hIdx + 1, nextHIdx).join('\n').trim();
-    chapters.push({ title: chTitle, content });
-  });
-
-  return { title: stem, chapters };
+  const now = Date.now();
+  const record = {
+    id: name,
+    title: res.book.title,
+    author: res.book.author,
+    noovel: res.book,
+    raw,
+    chapterCount: res.book.chapters.length,
+    addedAt: now,
+    lastReadAt: now,
+  };
+  dbPut(record).catch(err => console.error('library save failed', err));
+  openBook(record);
 }
 
 // ===== Bookmark =====
@@ -181,7 +173,39 @@ function renderChapter(idx, scrollRatio) {
 
   const body = document.createElement('div');
   body.className = 'chapter-body';
-  body.textContent = ch.content;
+  ch.blocks.forEach(b => {
+    if (b.t === 'p') {
+      const p = document.createElement('p');
+      p.className = 'para' + (/^[「『（(]/.test(b.text) ? ' no-indent' : '');
+      p.textContent = b.text;
+      body.appendChild(p);
+    } else if (b.t === 'h') {
+      const h = document.createElement('h3');
+      h.className = 'section-title';
+      h.textContent = b.text;
+      body.appendChild(h);
+    } else if (b.t === 'gap') {
+      const g = document.createElement('div');
+      g.className = 'scene-gap';
+      body.appendChild(g);
+    } else if (b.t === 'table') {
+      const wrap = document.createElement('div');
+      wrap.className = 'table-wrap';
+      const tbl = document.createElement('table');
+      tbl.className = 'n-table';
+      b.rows.forEach((row, ri) => {
+        const tr = document.createElement('tr');
+        row.forEach(cell => {
+          const td = document.createElement(ri === 0 ? 'th' : 'td');
+          td.textContent = cell;
+          tr.appendChild(td);
+        });
+        tbl.appendChild(tr);
+      });
+      wrap.appendChild(tbl);
+      body.appendChild(wrap);
+    }
+  });
   reader.appendChild(body);
 
   const wrap = document.getElementById('reader-wrap');
@@ -209,10 +233,10 @@ function highlightToc() {
   });
 }
 
-// ===== Load book =====
-function loadBook(text, filename, { save = false } = {}) {
-  currentFile = filename;
-  book = parseChapters(text, filename);
+// ===== Open book =====
+function openBook(record) {
+  currentFile = record.id;
+  book = record.noovel;
 
   document.getElementById('shelf').classList.add('hidden');
   document.getElementById('reader').classList.remove('hidden');
@@ -226,22 +250,8 @@ function loadBook(text, filename, { save = false } = {}) {
   const bm = getBookmark();
   renderChapter(bm.chapter || 0, bm.ratio || 0);
 
-  const now = Date.now();
-  if (save) {
-    dbPut({
-      id: filename,
-      title: book.title,
-      text,
-      chapterCount: book.chapters.length,
-      addedAt: now,
-      lastReadAt: now,
-    }).catch(err => console.error('library save failed', err));
-  } else {
-    // Touch lastReadAt so the shelf stays sorted by recency
-    dbGet(filename).then(rec => {
-      if (rec) { rec.lastReadAt = now; return dbPut(rec); }
-    }).catch(() => {});
-  }
+  record.lastReadAt = Date.now();
+  dbPut(record).catch(() => {});
 }
 
 // ===== Bookshelf =====
@@ -297,7 +307,15 @@ async function renderShelf() {
 
     main.append(title, meta, bar);
     main.addEventListener('click', () => {
-      loadBook(rec.text, rec.id);
+      if (rec.noovel) { openBook(rec); return; }
+      // 旧形式（生テキスト保存）からの移行：一度変換して保存し直す
+      const res = convertText(rec.text, rec.id.replace(/\.[^.]+$/, ''));
+      rec.noovel = res.book;
+      rec.raw = rec.text;
+      delete rec.text;
+      rec.title = res.book.title;
+      rec.chapterCount = res.book.chapters.length;
+      openBook(rec);
     });
 
     const del = document.createElement('button');
@@ -360,9 +378,46 @@ document.getElementById('file-input').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
   const fr = new FileReader();
-  fr.onload = ev => loadBook(ev.target.result, file.name, { save: true });
-  fr.readAsText(file, 'UTF-8');
+  fr.onload = ev => {
+    const { text, enc } = decodeBuffer(ev.target.result);
+    importContent(text, file.name, enc === 'shift_jis' ? '文字コードをShift_JISとして読み込みました' : '');
+  };
+  fr.readAsArrayBuffer(file);
   e.target.value = '';
+});
+
+// ===== Paste import =====
+document.getElementById('btn-paste-open').addEventListener('click', () => {
+  document.getElementById('paste-panel').classList.remove('hidden');
+});
+document.getElementById('btn-paste-cancel').addEventListener('click', () => {
+  document.getElementById('paste-panel').classList.add('hidden');
+});
+document.getElementById('paste-panel').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+});
+document.getElementById('btn-paste-import').addEventListener('click', () => {
+  let text = document.getElementById('paste-text').value.trim();
+  if (!text) { alert('本文が空です'); return; }
+  // AI出力のコードフェンスを除去
+  text = text.replace(/^```[a-z]*\s*\n/i, '').replace(/\n```\s*$/, '');
+  let title = document.getElementById('paste-title').value.trim();
+
+  // JSONが貼られたら .noovel として検証取り込み
+  const isNoovel = text.startsWith('{');
+  let name;
+  if (isNoovel) {
+    if (!title) { try { title = (JSON.parse(text).title || '').trim(); } catch (err) { title = ''; } }
+    name = (title || '無題') + '.noovel';
+  } else {
+    if (!title) title = (text.split('\n')[0] || '無題').trim().slice(0, 30);
+    name = title + '.txt';
+  }
+
+  document.getElementById('paste-panel').classList.add('hidden');
+  document.getElementById('paste-text').value = '';
+  document.getElementById('paste-title').value = '';
+  importContent(text, name, '');
 });
 
 // ===== Chapter navigation =====

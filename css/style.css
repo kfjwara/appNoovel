@@ -98,11 +98,33 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   opacity: 0.75;
 }
 
-/* 本文 */
-.chapter-body {
-  white-space: pre-wrap;
-  word-break: break-all;
+/* 本文（ブロック描画） */
+.chapter-body { word-break: break-all; }
+
+.para { text-indent: 1em; margin: 0; }
+.para + .para { margin-top: .55em; }
+.para.no-indent { text-indent: 0; }
+
+.section-title {
+  font-size: calc(var(--font-size) * 1.02);
+  font-weight: bold;
+  margin: 1.8em 0 .9em;
 }
+
+.scene-gap { height: 2.2em; }
+
+.table-wrap { overflow-x: auto; margin: 1.2em 0; }
+.n-table {
+  border-collapse: collapse;
+  font-size: calc(var(--font-size) * .85);
+  line-height: 1.6;
+}
+.n-table th, .n-table td {
+  border: 1px solid currentColor;
+  padding: 6px 12px;
+  text-align: left;
+}
+.n-table th { font-weight: bold; }
 
 /* ===== 本棚 ===== */
 #shelf { max-width: 680px; margin: 0 auto; }
@@ -179,6 +201,70 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   font-size: 14px;
   cursor: pointer;
 }
+
+#btn-paste-open {
+  display: block;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 20px;
+  background: none;
+  border: 1px dashed var(--ui-border);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text);
+  opacity: .65;
+  cursor: pointer;
+}
+
+/* ===== 貼り付け取り込みパネル ===== */
+#paste-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 100;
+}
+#paste-inner {
+  width: 100%;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  border-radius: 16px 16px 0 0;
+  padding: 20px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+#paste-title {
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-input-bg);
+  color: inherit;
+  font-size: 15px;
+}
+#paste-text {
+  height: 38vh;
+  padding: 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-input-bg);
+  color: inherit;
+  font-size: 14px;
+  resize: none;
+}
+.paste-actions { display: flex; gap: 10px; }
+.paste-actions button {
+  flex: 1;
+  padding: 12px;
+  border-radius: 10px;
+  font-size: 15px;
+  cursor: pointer;
+  border: 1px solid var(--ui-border);
+  background: none;
+  color: inherit;
+}
+#btn-paste-import { background: #555; color: #fff; border: none; }
 
 /* ===== 章ナビ ===== */
 #chapter-nav {

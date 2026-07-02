@@ -29,6 +29,7 @@
         <p>「開く」からテキストファイルを<br>読み込んでください</p>
       </div>
       <div id="shelf-list"></div>
+      <button id="btn-paste-open">＋ 貼り付けで追加</button>
     </div>
     <div id="reader"></div>
   </div>
@@ -111,8 +112,22 @@
   </div>
 </div>
 
-<input type="file" id="file-input" accept=".txt,.md,.text,.noovel" style="display:none">
+<!-- 貼り付け取り込みパネル -->
+<div id="paste-panel" class="hidden">
+  <div id="paste-inner">
+    <strong>テキスト貼り付けで追加</strong>
+    <input type="text" id="paste-title" placeholder="タイトル（省略時は1行目）">
+    <textarea id="paste-text" placeholder="本文をここに貼り付け"></textarea>
+    <div class="paste-actions">
+      <button id="btn-paste-cancel">やめる</button>
+      <button id="btn-paste-import">取り込む</button>
+    </div>
+  </div>
+</div>
 
+<input type="file" id="file-input" accept=".txt,.md,.markdown,.text,.noovel" style="display:none">
+
+<script src="./js/convert.js"></script>
 <script src="./js/app.js"></script>
 </body>
 </html>
