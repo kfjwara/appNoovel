@@ -270,6 +270,7 @@ function openBook(record) {
   currentFile = record.id;
   book = record.noovel;
   localStorage.setItem('noovel_last', record.id);
+  applyStyle();  // 縦書きは読書中のみ有効（本棚では効かせない）
 
   document.getElementById('shelf').classList.add('hidden');
   document.getElementById('reader').classList.remove('hidden');
@@ -383,6 +384,7 @@ function showShelf() {
   saveBookmark();
   book = null;
   currentFile = null;
+  applyStyle();  // 本棚は常に横書きに戻す
   document.getElementById('reader').classList.add('hidden');
   document.getElementById('chapter-nav').classList.add('hidden');
   document.getElementById('shelf').classList.remove('hidden');
@@ -555,7 +557,8 @@ function applyStyle() {
   r.style.setProperty('--font-family', FONTS[cfg.font] || FONTS.serif);
 
   // writing-mode はスクロール容器側にかける（横スクロールの開始位置・可到達性のため）
-  document.getElementById('reader-wrap').classList.toggle('vertical', cfg.vertical);
+  // ただし本棚表示中は常に横書き
+  document.getElementById('reader-wrap').classList.toggle('vertical', cfg.vertical && !!book);
 
   document.getElementById('range-font-size').value = cfg.fontSize;
   document.getElementById('val-font-size').textContent = cfg.fontSize;
