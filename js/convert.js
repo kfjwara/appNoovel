@@ -210,6 +210,69 @@ function convertText(raw, stem) {
   return { book: { title, subtitle, author, chapters }, warnings };
 }
 
+// ===== PDF テキスト再構成 =====
+// pages: 1ページ = [{str, x, y}] の配列（pdf.js の getTextContent から作る）。
+// 行の復元 → 毎ページ繰り返しのヘッダー/フッター・ページ番号の除去 → 行間と字下げから段落復元。
+function pdfPagesToText(pages) {
+  // 1) y座標のクラスタリングで行を復元（上から下へ）
+  const rawPages = pages.map(items => {
+    const lines = [];
+    for (const it of items) {
+      if (!it.str || !it.str.trim()) continue;
+      let line = lines.find(l => Math.abs(l.y - it.y) <= 2);
+      if (!line) { line = { y: it.y, parts: [] }; lines.push(line); }
+      line.parts.push({ x: it.x, str: it.str });
+    }
+    lines.sort((a, b) => b.y - a.y);
+    return lines.map(l => {
+      const joined = l.parts.sort((a, b) => a.x - b.x).map(p => p.str).join('');
+      return { y: l.y, text: joined.trim(), indent: /^[\s　]/.test(joined) };
+    }).filter(l => l.text);
+  });
+
+  // 2) 走りヘッダー/フッター（3ページ以上の6割超に出る同一行）とページ番号を除去
+  const freq = {};
+  rawPages.forEach(lines => {
+    new Set(lines.map(l => l.text)).forEach(t => { freq[t] = (freq[t] || 0) + 1; });
+  });
+  const isRunning = t => rawPages.length >= 3 && freq[t] >= Math.ceil(rawPages.length * 0.6);
+  const isPageNum = t => /^[\s\-‐–—・.．〔〕()（）]*[0-9０-９]{1,4}[\s\-‐–—・.．〔〕()（）]*$/.test(t);
+
+  // 3) 段落復元：行間が中央値の1.55倍を超える／字下げで始まる → 新しい段落
+  const SENT_END = /[。．！？!?」』】]$/;
+  const joinLines = (a, b) =>
+    (/[A-Za-z0-9]$/.test(a) && /^[A-Za-z0-9]/.test(b)) ? a + ' ' + b : a + b;
+
+  const paras = [];
+  for (const lines of rawPages) {
+    const kept = lines.filter(l => !isRunning(l.text) && !isPageNum(l.text));
+    if (!kept.length) continue;
+    const gaps = [];
+    for (let i = 1; i < kept.length; i++) gaps.push(Math.abs(kept[i - 1].y - kept[i].y));
+    const median = gaps.length ? gaps.slice().sort((a, b) => a - b)[Math.floor(gaps.length / 2)] : 0;
+
+    kept.forEach((l, i) => {
+      if (i === 0) {
+        // ページ先頭：前ページ末尾の段落が文末で終わってなければ続きとして連結
+        if (paras.length && !SENT_END.test(paras[paras.length - 1]) && !l.indent) {
+          paras[paras.length - 1] = joinLines(paras[paras.length - 1], l.text);
+        } else {
+          paras.push(l.text);
+        }
+        return;
+      }
+      const gap = Math.abs(kept[i - 1].y - l.y);
+      if (l.indent || (median && gap > median * 1.55)) {
+        paras.push(l.text);
+      } else {
+        paras[paras.length - 1] = joinLines(paras[paras.length - 1], l.text);
+      }
+    });
+  }
+
+  return paras.join('\n\n');
+}
+
 // ===== .noovel（JSON）の検証つき読み込み =====
 function parseNoovelJSON(raw) {
   let obj;
@@ -263,4 +326,4 @@ function parseNoovelJSON(raw) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { convertText, parseNoovelJSON };
+if (typeof module !== 'undefined') module.exports = { convertText, parseNoovelJSON, pdfPagesToText };

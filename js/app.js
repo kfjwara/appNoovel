@@ -421,9 +421,45 @@ document.getElementById('btn-left').addEventListener('click', () => {
   }
 });
 
+// PDF: pdf.js を必要時のみ遅延ロードしてテキスト抽出 → 通常の変換パイプラインへ
+async function importPdf(file) {
+  document.getElementById('header-title').textContent = 'PDF読み込み中…';
+  try {
+    const pdfjs = await import('./js/pdfjs/pdf.min.mjs');
+    pdfjs.GlobalWorkerOptions.workerSrc = './js/pdfjs/pdf.worker.min.mjs';
+    const buf = await file.arrayBuffer();
+    const doc = await pdfjs.getDocument({ data: buf }).promise;
+    const numPages = doc.numPages;
+    const pages = [];
+    for (let p = 1; p <= numPages; p++) {
+      const page = await doc.getPage(p);
+      const tc = await page.getTextContent();
+      pages.push(tc.items.map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5] })));
+      page.cleanup();
+    }
+    doc.destroy();
+    const text = pdfPagesToText(pages);
+    if (!text.trim()) {
+      alert('このPDFからテキストを取り出せませんでした（スキャン画像PDFの可能性があります）');
+      return;
+    }
+    importContent(text, file.name, `PDFから抽出しました（${numPages}ページ）。段落・章立ては推定です`);
+  } catch (err) {
+    console.error(err);
+    alert('PDFの読み込みに失敗しました：' + err.message);
+  } finally {
+    if (!book) document.getElementById('header-title').textContent = 'Noovel';
+  }
+}
+
 document.getElementById('file-input').addEventListener('change', e => {
   const file = e.target.files[0];
   if (!file) return;
+  if (/\.pdf$/i.test(file.name)) {
+    importPdf(file);
+    e.target.value = '';
+    return;
+  }
   const fr = new FileReader();
   fr.onload = ev => {
     const { text, enc } = decodeBuffer(ev.target.result);
