@@ -30,3 +30,8 @@ jobs:
           path: .
       - id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+      # deploy-pages は「Deployment failed, try again later」で気まぐれに落ちるため1回リトライ
+      - id: deployment-retry
+        if: steps.deployment.outcome == 'failure'
+        uses: actions/deploy-pages@v4
