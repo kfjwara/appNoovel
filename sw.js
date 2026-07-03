@@ -1,5 +1,7 @@
-const CACHE = 'noovel-v5';
-const ASSETS = ['./', './index.html', './css/style.css', './js/app.js', './js/convert.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
+importScripts('./js/version.js');
+
+const CACHE = 'noovel-v' + NOOVEL_VERSION;
+const ASSETS = ['./', './index.html', './css/style.css', './js/app.js', './js/convert.js', './js/version.js', './manifest.json', './icons/icon-192.png', './icons/icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)));

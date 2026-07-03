@@ -156,6 +156,14 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
 }
 .resume-meta { font-size: 12px; opacity: .6; }
 
+/* バージョン表記 */
+.version-note {
+  text-align: center;
+  font-size: 11px;
+  opacity: .35;
+  margin-top: 12px;
+}
+
 #shelf-empty {
   display: flex;
   flex-direction: column;

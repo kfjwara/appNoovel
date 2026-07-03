@@ -553,5 +553,9 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js');
 }
 
+// バージョン表示（js/version.js が単一正本）
+document.getElementById('app-version').textContent = 'Noovel v' + NOOVEL_VERSION;
+document.getElementById('shelf-version').textContent = 'v' + NOOVEL_VERSION;
+
 applyStyle();
 renderShelf();
