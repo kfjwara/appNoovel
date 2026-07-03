@@ -129,6 +129,33 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
 /* ===== 本棚 ===== */
 #shelf { max-width: 680px; margin: 0 auto; }
 
+#resume-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  border: none;
+  border-left: 4px solid #888;
+  border-radius: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  cursor: pointer;
+  font-family: inherit;
+}
+.resume-label { font-size: 12px; opacity: .6; }
+.resume-title {
+  font-size: 16px;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resume-meta { font-size: 12px; opacity: .6; }
+
 #shelf-empty {
   display: flex;
   flex-direction: column;

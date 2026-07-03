@@ -234,9 +234,22 @@ function highlightToc() {
 }
 
 // ===== Open book =====
+function openRecord(rec) {
+  if (rec.noovel) { openBook(rec); return; }
+  // 旧形式（生テキスト保存）からの移行：一度変換して保存し直す
+  const res = convertText(rec.text, rec.id.replace(/\.[^.]+$/, ''));
+  rec.noovel = res.book;
+  rec.raw = rec.text;
+  delete rec.text;
+  rec.title = res.book.title;
+  rec.chapterCount = res.book.chapters.length;
+  openBook(rec);
+}
+
 function openBook(record) {
   currentFile = record.id;
   book = record.noovel;
+  localStorage.setItem('noovel_last', record.id);
 
   document.getElementById('shelf').classList.add('hidden');
   document.getElementById('reader').classList.remove('hidden');
@@ -282,6 +295,27 @@ async function renderShelf() {
   list.innerHTML = '';
   emptyMsg.classList.toggle('hidden', books.length > 0);
 
+  // 続きから読むバー（最後に開いた本へ1タップで再開）
+  const resume = document.getElementById('resume-bar');
+  const lastRec = books.find(b => b.id === localStorage.getItem('noovel_last'));
+  resume.classList.toggle('hidden', !lastRec);
+  if (lastRec) {
+    resume.innerHTML = '';
+    const label = document.createElement('div');
+    label.className = 'resume-label';
+    label.textContent = '▶ 続きから読む';
+    const t = document.createElement('div');
+    t.className = 'resume-title';
+    t.textContent = lastRec.title;
+    const meta = document.createElement('div');
+    meta.className = 'resume-meta';
+    const bm = JSON.parse(localStorage.getItem('bm_' + lastRec.id) || 'null');
+    const chTitle = (lastRec.noovel && bm && lastRec.noovel.chapters[bm.chapter]) ? lastRec.noovel.chapters[bm.chapter].title : '';
+    meta.textContent = [chTitle, Math.round(bookProgress(lastRec) * 100) + '%'].filter(Boolean).join(' ・ ');
+    resume.append(label, t, meta);
+    resume.onclick = () => openRecord(lastRec);
+  }
+
   books.forEach(rec => {
     const card = document.createElement('div');
     card.className = 'book-card';
@@ -306,17 +340,7 @@ async function renderShelf() {
     bar.appendChild(fill);
 
     main.append(title, meta, bar);
-    main.addEventListener('click', () => {
-      if (rec.noovel) { openBook(rec); return; }
-      // 旧形式（生テキスト保存）からの移行：一度変換して保存し直す
-      const res = convertText(rec.text, rec.id.replace(/\.[^.]+$/, ''));
-      rec.noovel = res.book;
-      rec.raw = rec.text;
-      delete rec.text;
-      rec.title = res.book.title;
-      rec.chapterCount = res.book.chapters.length;
-      openBook(rec);
-    });
+    main.addEventListener('click', () => openRecord(rec));
 
     const del = document.createElement('button');
     del.className = 'book-delete';
@@ -326,6 +350,7 @@ async function renderShelf() {
       if (!confirm(`「${rec.title}」を本棚から削除しますか？`)) return;
       await dbDelete(rec.id).catch(err => console.error('delete failed', err));
       localStorage.removeItem('bm_' + rec.id);
+      if (localStorage.getItem('noovel_last') === rec.id) localStorage.removeItem('noovel_last');
       renderShelf();
     });
 
