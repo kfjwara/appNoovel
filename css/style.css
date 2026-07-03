@@ -78,12 +78,11 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   line-height: var(--line-height);
 }
 
-/* 縦書き */
-#reader.vertical {
-  writing-mode: vertical-rl;
+/* 縦書き（writing-mode はスクロール容器 #reader-wrap にかける） */
+#reader-wrap.vertical { writing-mode: vertical-rl; }
+#reader-wrap.vertical #reader {
   max-width: none;
   max-height: 100%;
-  height: max-content;
   margin: 0 auto;
 }
 

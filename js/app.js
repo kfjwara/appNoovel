@@ -124,12 +124,36 @@ function importContent(raw, name, encWarning) {
   openBook(record);
 }
 
+// ===== Scroll axis helpers（縦書き=横スクロールに対応） =====
+function isVerticalMode() {
+  return document.getElementById('reader-wrap').classList.contains('vertical');
+}
+
+// 読書位置を 0〜1 の比率で返す（縦書きは scrollLeft が負に進む実装に対応）
+function getScrollRatio() {
+  const wrap = document.getElementById('reader-wrap');
+  if (isVerticalMode()) {
+    const max = wrap.scrollWidth - wrap.clientWidth;
+    return max ? Math.min(1, Math.abs(wrap.scrollLeft) / max) : 0;
+  }
+  const max = wrap.scrollHeight - wrap.clientHeight;
+  return max ? Math.min(1, wrap.scrollTop / max) : 0;
+}
+
+function setScrollRatio(ratio) {
+  const wrap = document.getElementById('reader-wrap');
+  if (isVerticalMode()) {
+    const max = wrap.scrollWidth - wrap.clientWidth;
+    wrap.scrollLeft = -(ratio * max);
+  } else {
+    wrap.scrollTop = ratio * (wrap.scrollHeight - wrap.clientHeight);
+  }
+}
+
 // ===== Bookmark =====
 function saveBookmark() {
   if (!currentFile) return;
-  const wrap = document.getElementById('reader-wrap');
-  const ratio = wrap.scrollTop / (wrap.scrollHeight - wrap.clientHeight || 1);
-  localStorage.setItem('bm_' + currentFile, JSON.stringify({ chapter: currentChapter, ratio }));
+  localStorage.setItem('bm_' + currentFile, JSON.stringify({ chapter: currentChapter, ratio: getScrollRatio() }));
 }
 
 function getBookmark() {
@@ -139,18 +163,13 @@ function getBookmark() {
 
 function restoreScroll(ratio) {
   if (!ratio) return;
-  setTimeout(() => {
-    const wrap = document.getElementById('reader-wrap');
-    wrap.scrollTop = ratio * (wrap.scrollHeight - wrap.clientHeight);
-  }, 80);
+  setTimeout(() => setScrollRatio(ratio), 80);
 }
 
 // ===== Scroll: progress + debounced bookmark =====
 let scrollTimer;
 document.getElementById('reader-wrap').addEventListener('scroll', () => {
-  const wrap = document.getElementById('reader-wrap');
-  const ratio = wrap.scrollTop / (wrap.scrollHeight - wrap.clientHeight || 1);
-  document.getElementById('progress-bar').style.width = (ratio * 100) + '%';
+  document.getElementById('progress-bar').style.width = (getScrollRatio() * 100) + '%';
   clearTimeout(scrollTimer);
   scrollTimer = setTimeout(saveBookmark, 500);
 });
@@ -210,6 +229,7 @@ function renderChapter(idx, scrollRatio) {
 
   const wrap = document.getElementById('reader-wrap');
   wrap.scrollTop = 0;
+  wrap.scrollLeft = 0;
   document.getElementById('progress-bar').style.width = '0%';
 
   updateChapterNav();
@@ -500,7 +520,9 @@ document.getElementById('sel-font').addEventListener('change', e => {
   cfg.font = e.target.value; applyStyle(); saveCfg();
 });
 document.getElementById('tog-vertical').addEventListener('change', e => {
+  const ratio = getScrollRatio();  // 切替前の読書位置を引き継ぐ
   cfg.vertical = e.target.checked; applyStyle(); saveCfg();
+  requestAnimationFrame(() => setScrollRatio(ratio));
 });
 document.querySelectorAll('.theme-btn').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -532,7 +554,8 @@ function applyStyle() {
   r.style.setProperty('--line-height', cfg.lineHeight);
   r.style.setProperty('--font-family', FONTS[cfg.font] || FONTS.serif);
 
-  document.getElementById('reader').classList.toggle('vertical', cfg.vertical);
+  // writing-mode はスクロール容器側にかける（横スクロールの開始位置・可到達性のため）
+  document.getElementById('reader-wrap').classList.toggle('vertical', cfg.vertical);
 
   document.getElementById('range-font-size').value = cfg.fontSize;
   document.getElementById('val-font-size').textContent = cfg.fontSize;
