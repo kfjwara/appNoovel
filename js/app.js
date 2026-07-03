@@ -421,12 +421,27 @@ document.getElementById('btn-left').addEventListener('click', () => {
   }
 });
 
-// PDF: pdf.js を必要時のみ遅延ロードしてテキスト抽出 → 通常の変換パイプラインへ
+// PDF: pdf.js（UMD版・scriptタグ読み込み）を必要時のみ遅延ロード → 通常の変換パイプラインへ
+// ※ESモジュール版はiOS Safariで「Importing a module script failed」になるため使わない
+let pdfjsLoader = null;
+function loadPdfjs() {
+  if (!pdfjsLoader) {
+    pdfjsLoader = new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = './js/pdfjs/pdf.min.js';
+      s.onload = () => resolve(window.pdfjsLib);
+      s.onerror = () => reject(new Error('pdf.js を読み込めませんでした'));
+      document.head.appendChild(s);
+    });
+  }
+  return pdfjsLoader;
+}
+
 async function importPdf(file) {
   document.getElementById('header-title').textContent = 'PDF読み込み中…';
   try {
-    const pdfjs = await import('./js/pdfjs/pdf.min.mjs');
-    pdfjs.GlobalWorkerOptions.workerSrc = './js/pdfjs/pdf.worker.min.mjs';
+    const pdfjs = await loadPdfjs();
+    pdfjs.GlobalWorkerOptions.workerSrc = './js/pdfjs/pdf.worker.min.js';
     const buf = await file.arrayBuffer();
     const doc = await pdfjs.getDocument({ data: buf }).promise;
     const numPages = doc.numPages;
