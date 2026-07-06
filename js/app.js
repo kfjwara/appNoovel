@@ -306,6 +306,7 @@ function openBook(record) {
   applyStyle();  // 縦書きは読書中のみ有効（本棚では効かせない）
 
   document.getElementById('shelf').classList.add('hidden');
+  document.getElementById('resume-bar').classList.add('hidden');  // ピルは本棚専用
   document.getElementById('reader').classList.remove('hidden');
   document.getElementById('chapter-nav').classList.remove('hidden');
   const left = document.getElementById('btn-left');
@@ -351,23 +352,21 @@ async function renderShelf() {
   list.innerHTML = '';
   emptyMsg.classList.toggle('hidden', books.length > 0);
 
-  // 続きから読むバー（最後に開いた本へ1タップで再開）
+  // 続きから読む：下部固定ピル（最後に開いた本へ1タップで再開）
   const resume = document.getElementById('resume-bar');
   const lastRec = books.find(b => b.id === localStorage.getItem('noovel_last'));
   resume.classList.toggle('hidden', !lastRec);
   if (lastRec) {
     resume.innerHTML = '';
-    const label = document.createElement('div');
+    const label = document.createElement('span');
     label.className = 'resume-label';
-    label.textContent = '▶ 続きから読む';
-    const t = document.createElement('div');
+    label.textContent = '▶';
+    const t = document.createElement('span');
     t.className = 'resume-title';
     t.textContent = lastRec.title;
-    const meta = document.createElement('div');
+    const meta = document.createElement('span');
     meta.className = 'resume-meta';
-    const bm = JSON.parse(localStorage.getItem('bm_' + lastRec.id) || 'null');
-    const chTitle = (lastRec.noovel && bm && lastRec.noovel.chapters[bm.chapter]) ? lastRec.noovel.chapters[bm.chapter].title : '';
-    meta.textContent = [chTitle, Math.round(bookProgress(lastRec) * 100) + '%'].filter(Boolean).join(' ・ ');
+    meta.textContent = Math.round(bookProgress(lastRec) * 100) + '%';
     resume.append(label, t, meta);
     resume.onclick = () => openRecord(lastRec);
   }

@@ -202,34 +202,40 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 .n-table th { font-weight: bold; }
 
 /* ===== 本棚 ===== */
-#shelf { max-width: 680px; margin: 0 auto; }
+#shelf { max-width: 680px; margin: 0 auto; padding-bottom: 90px; }  /* 下部ピルとの被り回避 */
 
+/* 続きから読む：下部固定ピル（本棚表示中のみ） */
 #resume-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-  text-align: left;
-  background: var(--ui-panel);
-  color: var(--ui-text);
+  align-items: center;
+  gap: 8px;
+  max-width: min(86vw, 480px);
+  background: rgba(47, 43, 36, .92);
+  color: #f5f0e8;
   border: none;
-  border-left: 4px solid #888;
-  border-radius: 12px;
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.08);
-  cursor: pointer;
+  border-radius: 24px;
+  padding: 11px 18px;
   font-family: inherit;
+  font-size: 13px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .3);
+  cursor: pointer;
+  z-index: 40;
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
 }
-.resume-label { font-size: 12px; opacity: .6; }
+.resume-label { color: #f0c96a; font-size: 10px; flex-shrink: 0; }
 .resume-title {
-  font-size: 16px;
   font-weight: bold;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
-.resume-meta { font-size: 12px; opacity: .6; }
+.resume-meta { font-size: 11px; opacity: .7; flex-shrink: 0; }
 
 /* バージョン表記 */
 .version-note {
