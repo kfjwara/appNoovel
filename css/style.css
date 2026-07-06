@@ -52,7 +52,15 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   color: var(--ui-text);
   flex-shrink: 0;
 }
-#header h1 { font-size: 16px; font-weight: bold; }
+#header h1 {
+  font-size: 13px;
+  font-weight: 600;
+  opacity: .9;
+  max-width: 56%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 #btn-left {
   background: none;
   border: 1px solid currentColor;
@@ -63,6 +71,8 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   color: inherit;
   white-space: nowrap;
 }
+#btn-left svg { display: block; }
+#btn-left[data-mode="shelf"] { padding: 5px 9px; opacity: .85; }
 
 #btn-settings {
   display: flex;
@@ -394,17 +404,29 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   cursor: default;
 }
 
+/* 章ナビ中央＝目次ボタン（案A） */
 #chapter-nav-info {
   flex: 1;
   text-align: center;
-  padding: 0 12px;
+  padding: 4px 10px;
   min-width: 0;
+  background: none;
+  border: 1px dashed rgba(127,127,127,.45);
+  border-radius: 8px;
+  color: inherit;
+  font-family: inherit;
+  cursor: pointer;
 }
 #ch-title-nav {
   font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+#ch-title-nav::before {
+  content: '▤ ';
+  font-size: 11px;
+  opacity: .55;
 }
 #ch-counter {
   font-size: 11px;

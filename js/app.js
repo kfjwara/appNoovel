@@ -308,8 +308,10 @@ function openBook(record) {
   document.getElementById('shelf').classList.add('hidden');
   document.getElementById('reader').classList.remove('hidden');
   document.getElementById('chapter-nav').classList.remove('hidden');
-  document.getElementById('btn-left').textContent = '目次';
-  document.getElementById('btn-left').dataset.mode = 'toc';
+  const left = document.getElementById('btn-left');
+  left.innerHTML = SHELF_ICON;
+  left.dataset.mode = 'shelf';
+  left.setAttribute('aria-label', '本棚へ戻る');
   document.getElementById('header-title').textContent = book.title;
 
   buildToc();
@@ -423,8 +425,10 @@ function showShelf() {
   document.getElementById('reader').classList.add('hidden');
   document.getElementById('chapter-nav').classList.add('hidden');
   document.getElementById('shelf').classList.remove('hidden');
-  document.getElementById('btn-left').textContent = '開く';
-  document.getElementById('btn-left').dataset.mode = 'open';
+  const left = document.getElementById('btn-left');
+  left.textContent = '開く';
+  left.dataset.mode = 'open';
+  left.removeAttribute('aria-label');
   document.getElementById('header-title').textContent = 'Noovel';
   document.getElementById('progress-bar').style.width = '0%';
   renderShelf();
@@ -619,14 +623,24 @@ function renderTocPanel() {
   });
 }
 
-// ===== Header left button (open / toc) =====
+// ===== Header left button (open / back-to-shelf) =====
+// 本棚アイコン（線画SVG。読書中のヘッダー左＝本棚へ戻る）
+const SHELF_ICON =
+  '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<path d="M5 3v15M10 3v15M14.5 4.5L19 18"/><path d="M3 21h18"/></svg>';
+
 document.getElementById('btn-left').addEventListener('click', () => {
-  if (document.getElementById('btn-left').dataset.mode === 'toc') {
-    renderTocPanel();
-    document.getElementById('toc-panel').classList.remove('hidden');
+  if (document.getElementById('btn-left').dataset.mode === 'shelf') {
+    showShelf();
   } else {
     document.getElementById('file-input').click();
   }
+});
+
+// 章ナビ中央（いま居る章の表示）タップ = 目次を開く（案A）
+document.getElementById('chapter-nav-info').addEventListener('click', () => {
+  renderTocPanel();
+  document.getElementById('toc-panel').classList.remove('hidden');
 });
 
 // PDF: pdf.js（UMD版・scriptタグ読み込み）を必要時のみ遅延ロード → 通常の変換パイプラインへ
