@@ -24,7 +24,8 @@ const FONTS = {
 };
 
 let cfg = { ...DEFAULTS, ...JSON.parse(localStorage.getItem('noovel_cfg') || '{}') };
-let book = null;        // { title, chapters: [{title, content}] }
+let book = null;           // { title, chapters: [{title, blocks}] }
+let currentRecord = null;  // 開いてる本のDBレコード（marks の保存先）
 let currentChapter = 0;
 let currentFile = null;
 
@@ -150,10 +151,33 @@ function setScrollRatio(ratio) {
   }
 }
 
-// ===== Bookmark =====
+// 画面の読み始め位置にあるブロック番号（段落アンカー。文字サイズ・縦横切替でもズレない）
+function firstVisibleBlockIndex() {
+  const wrap = document.getElementById('reader-wrap');
+  const wrapRect = wrap.getBoundingClientRect();
+  const els = document.querySelectorAll('#reader [data-blk]');
+  for (const el of els) {
+    const r = el.getBoundingClientRect();
+    if (isVerticalMode() ? r.left < wrapRect.right - 4 : r.bottom > wrapRect.top + 4) {
+      return +el.dataset.blk;
+    }
+  }
+  return 0;
+}
+
+function scrollToBlock(blk) {
+  const el = document.querySelector(`#reader [data-blk="${blk}"]`);
+  if (el) el.scrollIntoView({ block: 'start', inline: 'start' });
+}
+
+// ===== Bookmark（自動しおり） =====
 function saveBookmark() {
   if (!currentFile) return;
-  localStorage.setItem('bm_' + currentFile, JSON.stringify({ chapter: currentChapter, ratio: getScrollRatio() }));
+  localStorage.setItem('bm_' + currentFile, JSON.stringify({
+    chapter: currentChapter,
+    ratio: getScrollRatio(),
+    blk: firstVisibleBlockIndex(),
+  }));
 }
 
 function getBookmark() {
@@ -170,13 +194,16 @@ function restoreScroll(ratio) {
 let scrollTimer;
 document.getElementById('reader-wrap').addEventListener('scroll', () => {
   document.getElementById('progress-bar').style.width = (getScrollRatio() * 100) + '%';
+  hidePressMenu();
   clearTimeout(scrollTimer);
   scrollTimer = setTimeout(saveBookmark, 500);
 });
 
 // ===== Render chapter =====
-function renderChapter(idx, scrollRatio) {
+// pos: { blk?: number, ratio?: number } — blk（段落アンカー）優先、ratioは旧データ互換
+function renderChapter(idx, pos = {}) {
   if (!book) return;
+  hidePressMenu();
   currentChapter = Math.max(0, Math.min(idx, book.chapters.length - 1));
   const ch = book.chapters[currentChapter];
   const reader = document.getElementById('reader');
@@ -192,24 +219,24 @@ function renderChapter(idx, scrollRatio) {
 
   const body = document.createElement('div');
   body.className = 'chapter-body';
-  ch.blocks.forEach(b => {
+  ch.blocks.forEach((b, i) => {
+    let el = null;
     if (b.t === 'p') {
-      const p = document.createElement('p');
-      p.className = 'para' + (/^[「『（(]/.test(b.text) ? ' no-indent' : '');
-      p.textContent = b.text;
-      body.appendChild(p);
+      el = document.createElement('p');
+      el.className = 'para' + (/^[「『（(]/.test(b.text) ? ' no-indent' : '');
+      const span = document.createElement('span');  // マーカーを行単位で塗るための内側要素
+      span.textContent = b.text;
+      el.appendChild(span);
     } else if (b.t === 'h') {
-      const h = document.createElement('h3');
-      h.className = 'section-title';
-      h.textContent = b.text;
-      body.appendChild(h);
+      el = document.createElement('h3');
+      el.className = 'section-title';
+      el.textContent = b.text;
     } else if (b.t === 'gap') {
-      const g = document.createElement('div');
-      g.className = 'scene-gap';
-      body.appendChild(g);
+      el = document.createElement('div');
+      el.className = 'scene-gap';
     } else if (b.t === 'table') {
-      const wrap = document.createElement('div');
-      wrap.className = 'table-wrap';
+      el = document.createElement('div');
+      el.className = 'table-wrap';
       const tbl = document.createElement('table');
       tbl.className = 'n-table';
       b.rows.forEach((row, ri) => {
@@ -221,8 +248,11 @@ function renderChapter(idx, scrollRatio) {
         });
         tbl.appendChild(tr);
       });
-      wrap.appendChild(tbl);
-      body.appendChild(wrap);
+      el.appendChild(tbl);
+    }
+    if (el) {
+      el.dataset.blk = i;
+      body.appendChild(el);
     }
   });
   reader.appendChild(body);
@@ -234,8 +264,10 @@ function renderChapter(idx, scrollRatio) {
 
   updateChapterNav();
   highlightToc();
+  applyMarkClasses();
 
-  if (scrollRatio) restoreScroll(scrollRatio);
+  if (pos.blk != null && pos.blk > 0) setTimeout(() => scrollToBlock(pos.blk), 80);
+  else if (pos.ratio) restoreScroll(pos.ratio);
 }
 
 function updateChapterNav() {
@@ -268,6 +300,7 @@ function openRecord(rec) {
 
 function openBook(record) {
   currentFile = record.id;
+  currentRecord = record;
   book = record.noovel;
   localStorage.setItem('noovel_last', record.id);
   applyStyle();  // 縦書きは読書中のみ有効（本棚では効かせない）
@@ -282,7 +315,7 @@ function openBook(record) {
   buildToc();
 
   const bm = getBookmark();
-  renderChapter(bm.chapter || 0, bm.ratio || 0);
+  renderChapter(bm.chapter || 0, { blk: bm.blk, ratio: bm.ratio });
 
   record.lastReadAt = Date.now();
   dbPut(record).catch(() => {});
@@ -382,8 +415,10 @@ async function renderShelf() {
 
 function showShelf() {
   saveBookmark();
+  hidePressMenu();
   book = null;
   currentFile = null;
+  currentRecord = null;
   applyStyle();  // 本棚は常に横書きに戻す
   document.getElementById('reader').classList.add('hidden');
   document.getElementById('chapter-nav').classList.add('hidden');
@@ -395,26 +430,199 @@ function showShelf() {
   renderShelf();
 }
 
+// ===== しおり・マーカー（段落アンカー） =====
+function hasMark(kind, ch, blk) {
+  return !!(currentRecord && currentRecord[kind] && currentRecord[kind].some(m => m.ch === ch && m.blk === blk));
+}
+
+function toggleMark(kind) {
+  if (!pressBlockEl || !currentRecord) return;
+  const blk = +pressBlockEl.dataset.blk;
+  const list = currentRecord[kind] || (currentRecord[kind] = []);
+  const i = list.findIndex(m => m.ch === currentChapter && m.blk === blk);
+  if (i >= 0) list.splice(i, 1);
+  else list.push({ ch: currentChapter, blk, at: Date.now() });
+  dbPut(currentRecord).catch(err => console.error('mark save failed', err));
+  hidePressMenu();
+  applyMarkClasses();
+}
+
+function applyMarkClasses() {
+  document.querySelectorAll('#reader [data-blk]').forEach(el => {
+    const blk = +el.dataset.blk;
+    el.classList.toggle('marked', hasMark('markers', currentChapter, blk));
+    el.classList.toggle('bookmarked', hasMark('bookmarks', currentChapter, blk));
+  });
+}
+
+// ===== 長押しメニュー =====
+let pressTimer = null;
+let pressStart = null;
+let pressBlockEl = null;
+
+function hidePressMenu() {
+  const menu = document.getElementById('press-menu');
+  if (menu) menu.classList.add('hidden');
+  if (pressBlockEl) { pressBlockEl.classList.remove('pressing'); pressBlockEl = null; }
+}
+
+function showPressMenu(el) {
+  if (!currentRecord) return;
+  pressBlockEl = el;
+  el.classList.add('pressing');
+  const blk = +el.dataset.blk;
+  document.getElementById('pm-marker').textContent = hasMark('markers', currentChapter, blk) ? 'マーカー解除' : 'マーカー';
+  document.getElementById('pm-bookmark').textContent = hasMark('bookmarks', currentChapter, blk) ? 'しおりを外す' : 'しおり';
+
+  const menu = document.getElementById('press-menu');
+  menu.classList.remove('hidden');
+  const wrap = document.getElementById('reader-wrap');
+  const wrapRect = wrap.getBoundingClientRect();
+  const r = el.getBoundingClientRect();
+  const top = r.top - wrapRect.top + wrap.scrollTop - menu.offsetHeight - 10;
+  let left = r.left - wrapRect.left + wrap.scrollLeft + r.width / 2;
+  const half = menu.offsetWidth / 2;
+  left = Math.max(half + 6, Math.min(left, wrapRect.width - half - 6 + wrap.scrollLeft));
+  menu.style.top = Math.max(top, wrap.scrollTop + 6) + 'px';
+  menu.style.left = left + 'px';
+}
+
+const readerEl = document.getElementById('reader');
+readerEl.addEventListener('touchstart', e => {
+  const el = e.target.closest('p[data-blk], h3[data-blk]');
+  if (!el) return;
+  pressStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => showPressMenu(el), 500);
+}, { passive: true });
+readerEl.addEventListener('touchmove', e => {
+  if (!pressStart) return;
+  const dx = e.touches[0].clientX - pressStart.x;
+  const dy = e.touches[0].clientY - pressStart.y;
+  if (dx * dx + dy * dy > 100) { clearTimeout(pressTimer); pressTimer = null; }
+}, { passive: true });
+readerEl.addEventListener('touchend', () => { clearTimeout(pressTimer); pressTimer = null; pressStart = null; });
+// PCでは右クリックで同じメニュー
+readerEl.addEventListener('contextmenu', e => {
+  const el = e.target.closest('p[data-blk], h3[data-blk]');
+  if (!el) return;
+  e.preventDefault();
+  showPressMenu(el);
+});
+document.addEventListener('click', e => {
+  if (pressBlockEl && !e.target.closest('#press-menu')) hidePressMenu();
+});
+document.getElementById('pm-marker').addEventListener('click', () => toggleMark('markers'));
+document.getElementById('pm-bookmark').addEventListener('click', () => toggleMark('bookmarks'));
+
+// ===== 目次パネル（目次｜しおり｜マーカー） =====
+let tocTab = 'toc';
+
+document.querySelectorAll('.toc-tab').forEach(btn => {
+  btn.addEventListener('click', () => { tocTab = btn.dataset.tab; renderTocPanel(); });
+});
+
 function buildToc() {
+  tocTab = 'toc';
+  document.getElementById('toc-book-title').textContent = book.title;
+  renderTocPanel();
+}
+
+function markQuote(m) {
+  const ch = book.chapters[m.ch];
+  if (!ch) return '';
+  const b = ch.blocks[m.blk];
+  const t = (b && b.text) || '';
+  return t.length > 40 ? t.slice(0, 40) + '…' : t;
+}
+
+function renderTocPanel() {
+  if (!book) return;
+  const bms = (currentRecord && currentRecord.bookmarks) || [];
+  const mks = (currentRecord && currentRecord.markers) || [];
+  document.querySelector('.toc-tab[data-tab="bm"]').textContent = bms.length ? `しおり ${bms.length}` : 'しおり';
+  document.querySelector('.toc-tab[data-tab="mk"]').textContent = mks.length ? `マーカー ${mks.length}` : 'マーカー';
+  document.querySelectorAll('.toc-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tocTab));
+
   const list = document.getElementById('toc-list');
   list.innerHTML = '';
-  document.getElementById('toc-book-title').textContent = book.title;
-  book.chapters.forEach((ch, i) => {
-    const btn = document.createElement('button');
-    btn.className = 'toc-item';
-    btn.textContent = ch.title || `第${i + 1}章`;
-    btn.addEventListener('click', () => {
-      renderChapter(i);
+
+  if (tocTab === 'toc') {
+    book.chapters.forEach((ch, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'toc-item';
+      btn.textContent = ch.title || `第${i + 1}章`;
+      btn.addEventListener('click', () => {
+        renderChapter(i);
+        document.getElementById('toc-panel').classList.add('hidden');
+      });
+      list.appendChild(btn);
+    });
+    highlightToc();
+    return;
+  }
+
+  const kind = tocTab === 'bm' ? 'bookmarks' : 'markers';
+  const items = (tocTab === 'bm' ? bms : mks).slice().sort((a, b) => a.ch - b.ch || a.blk - b.blk);
+
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'mark-empty';
+    empty.textContent = tocTab === 'bm'
+      ? '本文の段落を長押し →「しおり」で挟めます'
+      : '本文の段落を長押し →「マーカー」で塗れます';
+    list.appendChild(empty);
+    return;
+  }
+
+  items.forEach(m => {
+    const item = document.createElement('button');
+    item.className = 'mark-item ' + (tocTab === 'bm' ? 'is-bm' : 'is-mk');
+
+    const where = document.createElement('div');
+    where.className = 'mark-where';
+    const chName = document.createElement('span');
+    chName.textContent = (book.chapters[m.ch] && book.chapters[m.ch].title) || `第${m.ch + 1}章`;
+    const when = document.createElement('span');
+    when.textContent = formatDate(m.at);
+    where.append(chName, when);
+
+    const quote = document.createElement('div');
+    quote.className = 'mark-quote';
+    quote.textContent = markQuote(m);
+
+    item.append(where, quote);
+    item.addEventListener('click', () => {
+      renderChapter(m.ch, { blk: m.blk });
       document.getElementById('toc-panel').classList.add('hidden');
     });
-    list.appendChild(btn);
+
+    // 左スワイプで削除
+    let sx = null;
+    item.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, { passive: true });
+    item.addEventListener('touchend', e => {
+      if (sx === null) return;
+      const dx = e.changedTouches[0].clientX - sx;
+      sx = null;
+      if (dx < -60) {
+        if (!confirm('この' + (tocTab === 'bm' ? 'しおり' : 'マーカー') + 'を削除しますか？')) return;
+        const arr = currentRecord[kind];
+        const i = arr.findIndex(x => x.ch === m.ch && x.blk === m.blk);
+        if (i >= 0) arr.splice(i, 1);
+        dbPut(currentRecord).catch(() => {});
+        renderTocPanel();
+        applyMarkClasses();
+      }
+    }, { passive: true });
+
+    list.appendChild(item);
   });
 }
 
 // ===== Header left button (open / toc) =====
 document.getElementById('btn-left').addEventListener('click', () => {
   if (document.getElementById('btn-left').dataset.mode === 'toc') {
-    highlightToc();
+    renderTocPanel();
     document.getElementById('toc-panel').classList.remove('hidden');
   } else {
     document.getElementById('file-input').click();

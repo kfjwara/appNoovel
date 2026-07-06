@@ -40,6 +40,10 @@
       <div id="shelf-version" class="version-note"></div>
     </div>
     <div id="reader"></div>
+    <div id="press-menu" class="hidden">
+      <button id="pm-marker">マーカー</button>
+      <button id="pm-bookmark">しおり</button>
+    </div>
   </div>
 
   <div id="chapter-nav" class="hidden">
@@ -115,6 +119,11 @@
     <div id="toc-header">
       <strong id="toc-book-title"></strong>
       <button id="btn-close-toc">✕</button>
+    </div>
+    <div id="toc-tabs">
+      <button class="toc-tab active" data-tab="toc">目次</button>
+      <button class="toc-tab" data-tab="bm">しおり</button>
+      <button class="toc-tab" data-tab="mk">マーカー</button>
     </div>
     <div id="toc-list"></div>
     <button id="btn-to-shelf">‹ 本棚へ戻る</button>

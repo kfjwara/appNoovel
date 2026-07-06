@@ -7,6 +7,8 @@
 :root {
   --bg: #f5f0e8;
   --text: #333;
+  --marker-c: rgba(255, 214, 79, .45);
+  --ribbon-c: #a2543e;
   --font-size: 18px;
   --line-height: 2;
   --font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
@@ -22,6 +24,7 @@
 }
 
 body[data-ui="dark"] {
+  --marker-c: rgba(255, 214, 79, .26);
   --ui-bg: #222;
   --ui-panel: #2e2e2e;
   --ui-text: #ddd;
@@ -78,6 +81,7 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
 #reader-wrap {
   flex: 1;
   overflow: auto;
+  position: relative;
   padding: 32px 20px;
   color: var(--text);
   -webkit-overflow-scrolling: touch;
@@ -89,6 +93,10 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   font-family: var(--font-family);
   font-size: var(--font-size);
   line-height: var(--line-height);
+  /* 長押し＝マーク操作にするため、標準の選択・コールアウトは切る */
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
 }
 
 /* 縦書き（writing-mode はスクロール容器 #reader-wrap にかける） */
@@ -113,9 +121,56 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
 /* 本文（ブロック描画） */
 .chapter-body { word-break: break-all; }
 
-.para { text-indent: 1em; margin: 0; }
+.para { text-indent: 1em; margin: 0; position: relative; }
 .para + .para { margin-top: .55em; }
 .para.no-indent { text-indent: 0; }
+
+/* ===== マーカー・しおり・長押し ===== */
+.para.marked > span {
+  background: var(--marker-c);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  padding: .08em 0;
+  border-radius: 2px;
+}
+.section-title.marked { background: var(--marker-c); border-radius: 3px; }
+
+[data-blk].bookmarked { position: relative; }
+[data-blk].bookmarked::after {
+  content: '';
+  position: absolute;
+  right: -12px;
+  top: 2px;
+  width: 9px;
+  height: 20px;
+  background: var(--ribbon-c);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 76%, 0 100%);
+  opacity: .85;
+}
+
+[data-blk].pressing { background: rgba(0,0,0,.06); border-radius: 6px; }
+body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
+
+#press-menu {
+  position: absolute;
+  transform: translateX(-50%);
+  background: #2f2b24;
+  border-radius: 10px;
+  display: flex;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  z-index: 50;
+}
+#press-menu button {
+  background: none;
+  border: none;
+  color: #f5f0e8;
+  font-size: 14px;
+  padding: 11px 16px;
+  cursor: pointer;
+  white-space: nowrap;
+  font-family: -apple-system, 'Hiragino Sans', sans-serif;
+}
+#press-menu button + button { border-left: 1px solid rgba(245,240,232,.18); }
 
 .section-title {
   font-size: calc(var(--font-size) * 1.02);
@@ -473,10 +528,76 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   flex-shrink: 0;
 }
 
+#toc-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--ui-line);
+  flex-shrink: 0;
+}
+.toc-tab {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: inherit;
+  opacity: .5;
+  cursor: pointer;
+}
+.toc-tab.active {
+  opacity: 1;
+  font-weight: bold;
+  border-bottom: 2px solid currentColor;
+  margin-bottom: -1px;
+}
+
 #toc-list {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
+}
+
+.mark-item {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--ui-line);
+  text-align: left;
+  padding: 12px 8px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mark-item:last-child { border-bottom: none; }
+.mark-where {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  opacity: .55;
+}
+.mark-quote {
+  font-family: var(--font-family);
+  font-size: 13px;
+  line-height: 1.7;
+  text-align: left;
+}
+.mark-item.is-mk .mark-quote {
+  background: linear-gradient(transparent 15%, var(--marker-c) 15%, var(--marker-c) 88%, transparent 88%);
+  align-self: flex-start;
+}
+.mark-item.is-bm .mark-quote::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 13px;
+  margin-right: 7px;
+  background: var(--ribbon-c);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%);
+}
+.mark-empty {
+  padding: 32px 10px;
+  text-align: center;
+  font-size: 12px;
+  opacity: .5;
 }
 
 .toc-item {
