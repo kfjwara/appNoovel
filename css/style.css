@@ -56,10 +56,8 @@ body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
   font-size: 13px;
   font-weight: 600;
   opacity: .9;
-  max-width: 56%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-align: center;
+  padding: 0 8px;
 }
 #btn-left {
   background: none;
@@ -404,12 +402,14 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   cursor: default;
 }
 
-/* 章ナビ中央＝目次ボタン（案A） */
+/* 章ナビ中央＝目次ボタン（案A）。枠は内容ぶんだけ・左右の章送りから離す */
 #chapter-nav-info {
-  flex: 1;
-  text-align: center;
-  padding: 4px 10px;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: 58%;
+  margin: 0 12px;
+  text-align: center;
+  padding: 4px 14px;
   background: none;
   border: 1px dashed rgba(127,127,127,.45);
   border-radius: 8px;
