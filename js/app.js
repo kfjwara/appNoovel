@@ -306,7 +306,6 @@ function openBook(record) {
   applyStyle();  // 縦書きは読書中のみ有効（本棚では効かせない）
 
   document.getElementById('shelf').classList.add('hidden');
-  document.getElementById('resume-bar').classList.add('hidden');  // ピルは本棚専用
   document.getElementById('reader').classList.remove('hidden');
   document.getElementById('chapter-nav').classList.remove('hidden');
   const left = document.getElementById('btn-left');
