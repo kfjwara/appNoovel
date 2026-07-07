@@ -845,6 +845,83 @@ function applyStyle() {
   });
 }
 
+// ===== Backup / Restore =====
+// 本棚まるごと（本文・しおり・マーカー・読書位置・設定）を1つのJSONに書き出す／復元する
+async function exportBackup() {
+  let books = [];
+  try { books = await dbGetAll(); }
+  catch (err) { alert('本棚の読み出しに失敗しました：' + err.message); return; }
+  if (!books.length) { alert('本棚が空です'); return; }
+
+  const positions = {};
+  for (const b of books) {
+    const bm = localStorage.getItem('bm_' + b.id);
+    if (bm) { try { positions[b.id] = JSON.parse(bm); } catch (e) {} }
+  }
+  const data = {
+    noovelBackup: 1,
+    exportedAt: Date.now(),
+    cfg,
+    last: localStorage.getItem('noovel_last') || '',
+    books,
+    positions,
+  };
+
+  const d = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.download = `noovel_backup_${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}.json`;
+  a.href = URL.createObjectURL(blob);
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+async function importBackup(text) {
+  let data;
+  try { data = JSON.parse(text); }
+  catch (e) { alert('バックアップファイルとして読めませんでした'); return; }
+  if (data.noovelBackup !== 1 || !Array.isArray(data.books)) {
+    alert('Noovelのバックアップファイルではありません');
+    return;
+  }
+  const valid = data.books.filter(r => r && r.id);
+  if (!valid.length) { alert('復元できる本が入っていません'); return; }
+  if (!confirm(`${valid.length}冊を復元します。同じ本があれば上書きされます。よろしいですか？`)) return;
+
+  let ok = 0;
+  for (const rec of valid) {
+    try { await dbPut(rec); ok++; }
+    catch (err) { console.error('restore failed', rec.id, err); }
+  }
+  if (data.positions) {
+    for (const id of Object.keys(data.positions)) {
+      localStorage.setItem('bm_' + id, JSON.stringify(data.positions[id]));
+    }
+  }
+  if (data.last) localStorage.setItem('noovel_last', data.last);
+  if (data.cfg) { cfg = { ...DEFAULTS, ...data.cfg }; saveCfg(); applyStyle(); }
+
+  alert(ok === valid.length ? `${ok}冊を復元しました` : `${ok}冊を復元（${valid.length - ok}冊は失敗）`);
+  document.getElementById('settings-panel').classList.add('hidden');
+  renderShelf();
+}
+
+document.getElementById('btn-backup-export').addEventListener('click', exportBackup);
+document.getElementById('btn-backup-import').addEventListener('click', () => {
+  document.getElementById('backup-input').click();
+});
+document.getElementById('backup-input').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = ev => importBackup(ev.target.result);
+  fr.readAsText(file, 'UTF-8');
+  e.target.value = '';
+});
+
 // ===== Service Worker =====
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js');

@@ -482,6 +482,19 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   font-size: 14px;
 }
 
+.backup-row { display: flex; gap: 10px; }
+.backup-row button {
+  flex: 1;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--ui-border);
+  background: none;
+  color: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.backup-note { font-size: 11px; opacity: .5; margin-top: 6px; }
+
 .toggle-row { display: flex; align-items: center; justify-content: space-between; }
 .toggle-row label { font-size: 14px; }
 

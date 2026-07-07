@@ -108,6 +108,15 @@
       </label>
     </div>
 
+    <div>
+      <div class="panel-label">データ</div>
+      <div class="backup-row">
+        <button id="btn-backup-export">本棚を書き出す</button>
+        <button id="btn-backup-import">バックアップを読み込む</button>
+      </div>
+      <div class="backup-note">書き出したファイルは「ファイル」appに保存されます。月イチ推奨</div>
+    </div>
+
     <button id="btn-close-settings">閉じる</button>
     <div id="app-version" class="version-note"></div>
   </div>
@@ -144,6 +153,7 @@
 </div>
 
 <input type="file" id="file-input" accept=".txt,.md,.markdown,.text,.noovel,.pdf,application/pdf" style="display:none">
+<input type="file" id="backup-input" accept=".json,application/json" style="display:none">
 
 <script src="./js/version.js"></script>
 <script src="./js/convert.js"></script>
