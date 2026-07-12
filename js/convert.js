@@ -191,9 +191,13 @@ function convertText(raw, stem) {
   if (!title) title = stem;
 
   // 章の組み立て
+  // 章見出しが1つも無い文書では、前付け＝本文全体なので「まえがき」ではなく書名を章名にする
   const chapters = [];
   const preBlocks = linesToBlocks(preBody, sectionKeys);
-  if (preBlocks.some(b => b.t !== 'gap')) chapters.push({ title: 'まえがき', blocks: preBlocks });
+  if (preBlocks.some(b => b.t !== 'gap')) {
+    chapters.push({ title: marks.length ? 'まえがき' : title, blocks: preBlocks });
+    if (!marks.length) warnings.push('章見出しを検出できませんでした。全体を1章として取り込みました');
+  }
 
   marks.forEach((m, i) => {
     const end = marks[i + 1] ?? lines.length;

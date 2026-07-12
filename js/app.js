@@ -1150,6 +1150,11 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('./sw.js');
 }
 
+// ストレージの永続化を要求（iOS等が容量逼迫時に本棚のデータを自動削除するのを防ぐ）
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}
+
 // バージョン表示（js/version.js が単一正本）
 document.getElementById('app-version').textContent = 'Noovel v' + NOOVEL_VERSION;
 document.getElementById('shelf-version').textContent = 'v' + NOOVEL_VERSION;

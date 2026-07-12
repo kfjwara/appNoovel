@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>convert.js テスト</title>
+<style>
+  body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #ddd; }
+  .ok { color: #7ec97e; }
+  .fail { color: #e06c6c; font-weight: bold; }
+</style>
+</head>
+<body>
+<h1>convert.js テスト</h1>
+<div id="out">実行中…</div>
+<script src="../js/convert.js"></script>
+<script src="./convert.test.js"></script>
+<script>
+  const results = window.CONVERT_TEST_RESULTS || [];
+  const failed = results.filter(r => !r.ok);
+  document.getElementById('out').innerHTML =
+    results.map(r =>
+      '<div class="' + (r.ok ? 'ok' : 'fail') + '">' +
+      (r.ok ? 'ok    ' : 'FAIL  ') + r.name + (r.ok ? '' : ' — ' + r.err) +
+      '</div>'
+    ).join('') +
+    '<hr><div id="summary" class="' + (failed.length ? 'fail' : 'ok') + '">' +
+    results.length + ' tests, ' + failed.length + ' failed</div>';
+</script>
+</body>
+</html>
