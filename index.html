@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="./css/style.css">
 </head>
 <body>
+<div id="theme-deco" aria-hidden="true"><i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i></div>
 <div id="app">
 
   <header id="header">
@@ -64,12 +65,7 @@
 
     <div>
       <div class="panel-label">テーマ</div>
-      <div class="themes">
-        <button class="theme-btn" data-theme="warm">温白</button>
-        <button class="theme-btn" data-theme="white">白</button>
-        <button class="theme-btn" data-theme="sepia">セピア</button>
-        <button class="theme-btn" data-theme="dark">ダーク</button>
-      </div>
+      <div class="themes"><!-- ボタンは app.js が THEMES から生成 --></div>
     </div>
 
     <div class="setting-row">
@@ -152,11 +148,12 @@
   </div>
 </div>
 
-<input type="file" id="file-input" accept=".txt,.md,.markdown,.text,.noovel,.pdf,application/pdf" style="display:none">
+<input type="file" id="file-input" accept=".txt,.md,.markdown,.text,.noovel,.pdf,.webarchive,application/pdf,application/x-webarchive" style="display:none">
 <input type="file" id="backup-input" accept=".json,application/json" style="display:none">
 
 <script src="./js/version.js"></script>
 <script src="./js/convert.js"></script>
+<script src="./js/webarchive.js"></script>
 <script src="./js/app.js"></script>
 </body>
 </html>

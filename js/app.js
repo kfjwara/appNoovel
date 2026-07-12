@@ -3,18 +3,43 @@
 const DEFAULTS = {
   fontSize: 18,
   lineHeight: 2.0,
-  bgColor: '#f5f0e8',
+  bgColor: '#ffffff',
   textColor: '#333333',
   font: 'serif',
   vertical: false,
-  theme: 'warm',
+  theme: 'simple',
 };
 
+// bg はテーマの代表色（UIの明暗判定・グラデの下地色）。bgImage があれば body に敷く
 const THEMES = {
-  warm:  { bg: '#f5f0e8', text: '#333333' },
-  white: { bg: '#ffffff', text: '#333333' },
-  dark:  { bg: '#1a1a1a', text: '#dddddd' },
-  sepia: { bg: '#fbf0d9', text: '#5c4b2a' },
+  simple: { label: 'simple', bg: '#ffffff', text: '#333333' },
+  sky: {
+    label: 'sky', bg: '#8ccbee', text: '#173850',
+    bgImage:
+      'radial-gradient(38% 12% at 22% 78%, rgba(255,255,255,.5), transparent 70%),' +
+      'radial-gradient(30% 9% at 68% 88%, rgba(255,255,255,.4), transparent 70%),' +
+      'linear-gradient(180deg, #66b5e4 0%, #8ccbee 45%, #b8e1f7 80%, #d8effb 100%)',
+  },
+  night: {
+    label: 'night', bg: '#0e1a3f', text: '#ccd9f2',
+    bgImage:
+      'radial-gradient(1.2px 1.2px at 12% 18%, rgba(255,255,255,.9), transparent 60%),' +
+      'radial-gradient(1px 1px at 68% 8%, rgba(255,255,255,.7), transparent 60%),' +
+      'radial-gradient(1.4px 1.4px at 85% 30%, rgba(200,220,255,.8), transparent 60%),' +
+      'radial-gradient(1px 1px at 35% 42%, rgba(255,255,255,.5), transparent 60%),' +
+      'radial-gradient(1.1px 1.1px at 55% 24%, rgba(255,240,200,.6), transparent 60%),' +
+      'radial-gradient(1px 1px at 22% 60%, rgba(255,255,255,.4), transparent 60%),' +
+      'radial-gradient(1.3px 1.3px at 78% 55%, rgba(210,225,255,.5), transparent 60%),' +
+      'linear-gradient(180deg, #060b22 0%, #0e1a3f 55%, #1c2b57 100%)',
+  },
+  sf: {
+    label: 'SF', bg: '#060f16', text: '#c9eaf2',
+    bgImage:
+      'repeating-linear-gradient(0deg, transparent 0 27px, rgba(70,200,230,.045) 27px 28px),' +
+      'repeating-linear-gradient(90deg, transparent 0 27px, rgba(70,200,230,.045) 27px 28px),' +
+      'radial-gradient(90% 55% at 50% 118%, rgba(30,120,150,.22) 0%, transparent 65%),' +
+      'linear-gradient(180deg, #04090d 0%, #060f16 55%, #0a1922 100%)',
+  },
 };
 
 const FONTS = {
@@ -92,6 +117,24 @@ function decodeBuffer(buf) {
   catch (e) { return { text: new TextDecoder('shift_jis').decode(buf), enc: 'shift_jis' }; }
 }
 
+function finishImport(res, name, raw) {
+  if (res.warnings.length) alert('取り込みメモ：\n・' + res.warnings.join('\n・'));
+
+  const now = Date.now();
+  const record = {
+    id: name,
+    title: res.book.title,
+    author: res.book.author,
+    noovel: res.book,
+    raw,
+    chapterCount: res.book.chapters.length,
+    addedAt: now,
+    lastReadAt: now,
+  };
+  dbPut(record).catch(err => console.error('library save failed', err));
+  openBook(record);
+}
+
 function importContent(raw, name, encWarning) {
   const stem = name.replace(/\.[^.]+$/, '');
   const ext = ((name.match(/\.([^.]+)$/) || [])[1] || '').toLowerCase();
@@ -108,21 +151,24 @@ function importContent(raw, name, encWarning) {
     res = convertText(raw, stem);
   }
   if (encWarning) res.warnings.unshift(encWarning);
-  if (res.warnings.length) alert('取り込みメモ：\n・' + res.warnings.join('\n・'));
+  finishImport(res, name, raw);
+}
 
-  const now = Date.now();
-  const record = {
-    id: name,
-    title: res.book.title,
-    author: res.book.author,
-    noovel: res.book,
-    raw,
-    chapterCount: res.book.chapters.length,
-    addedAt: now,
-    lastReadAt: now,
-  };
-  dbPut(record).catch(err => console.error('library save failed', err));
-  openBook(record);
+// Safariで保存した .webarchive（Webページの丸ごと保存）の取り込み
+async function importWebarchive(file) {
+  document.getElementById('header-title').textContent = 'webarchive読み込み中…';
+  try {
+    const buf = await file.arrayBuffer();
+    const { html } = parseWebArchive(buf);
+    const res = webArchiveToBook(html, file.name.replace(/\.[^.]+$/, ''));
+    if (res.error) { alert('取り込めませんでした：' + res.error); return; }
+    finishImport(res, file.name, res.rawText || '');
+  } catch (err) {
+    console.error(err);
+    alert('webarchiveの読み込みに失敗しました：' + err.message);
+  } finally {
+    if (!book) document.getElementById('header-title').textContent = 'Noovel';
+  }
 }
 
 // ===== Scroll axis helpers（縦書き=横スクロールに対応） =====
@@ -695,6 +741,11 @@ document.getElementById('file-input').addEventListener('change', e => {
     e.target.value = '';
     return;
   }
+  if (/\.webarchive$/i.test(file.name)) {
+    importWebarchive(file);
+    e.target.value = '';
+    return;
+  }
   const fr = new FileReader();
   fr.onload = ev => {
     const { text, enc } = decodeBuffer(ev.target.result);
@@ -797,16 +848,29 @@ document.getElementById('tog-vertical').addEventListener('change', e => {
   cfg.vertical = e.target.checked; applyStyle(); saveCfg();
   requestAnimationFrame(() => setScrollRatio(ratio));
 });
-document.querySelectorAll('.theme-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const t = btn.dataset.theme;
-    if (!THEMES[t]) return;
-    cfg.theme = t;
-    cfg.bgColor = THEMES[t].bg;
-    cfg.textColor = THEMES[t].text;
-    applyStyle(); saveCfg();
-  });
-});
+// テーマボタンは THEMES から生成し、ボタン自体をそのテーマの配色で見せる
+function renderThemeButtons() {
+  const wrap = document.querySelector('.themes');
+  wrap.innerHTML = '';
+  for (const key of Object.keys(THEMES)) {
+    const t = THEMES[key];
+    const btn = document.createElement('button');
+    btn.className = 'theme-btn';
+    btn.dataset.theme = key;
+    btn.textContent = t.label;
+    btn.style.background = t.bg;
+    if (t.bgImage) btn.style.backgroundImage = t.bgImage;
+    btn.style.color = t.text;
+    btn.addEventListener('click', () => {
+      cfg.theme = key;
+      cfg.bgColor = t.bg;
+      cfg.textColor = t.text;
+      applyStyle(); saveCfg();
+    });
+    wrap.appendChild(btn);
+  }
+}
+renderThemeButtons();
 
 // ===== Apply style =====
 // 本文背景の輝度からUI（ヘッダー・パネル）の明暗を決める
@@ -821,6 +885,10 @@ function uiModeFor(hex) {
 function applyStyle() {
   const r = document.documentElement;
   document.body.dataset.ui = uiModeFor(cfg.bgColor);
+  // グラデーション背景とテーマ装飾（SFのHUDブラケットなど）はテーマ名で切り替える
+  const th = THEMES[cfg.theme];
+  document.body.dataset.theme = cfg.theme;
+  r.style.setProperty('--bg-image', th && th.bgImage ? th.bgImage : 'none');
   r.style.setProperty('--bg', cfg.bgColor);
   r.style.setProperty('--text', cfg.textColor);
   r.style.setProperty('--font-size', cfg.fontSize + 'px');

@@ -5,7 +5,8 @@
    --ui-*               … ヘッダー・ナビ・パネル・本棚などのUI。明暗2モードのみ。
                           本文背景の輝度から app.js が body[data-ui] を自動切替する */
 :root {
-  --bg: #f5f0e8;
+  --bg: #ffffff;
+  --bg-image: none;
   --text: #333;
   --marker-c: rgba(255, 214, 79, .45);
   --ribbon-c: #a2543e;
@@ -21,6 +22,7 @@
   --ui-active: rgba(0,0,0,.06);
   --ui-border: #ccc;
   --ui-input-bg: #fff;
+  --ui-accent: #888;
 }
 
 body[data-ui="dark"] {
@@ -32,10 +34,95 @@ body[data-ui="dark"] {
   --ui-active: rgba(255,255,255,.09);
   --ui-border: #555;
   --ui-input-bg: #3a3a3a;
+  --ui-accent: #aaa;
 }
 
-html, body { height: 100%; background: var(--bg); }
-body { font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
+/* ===== テーマ別UI配色 =====
+   ヘッダー・章ナビ・進捗バーだけに直接あてる。
+   --ui-* を上書きするとパネルや本棚カードにも波及して文字が読めなくなるので変数は触らない */
+body[data-theme="sky"] #header,
+body[data-theme="sky"] #chapter-nav { color: #f4faff; }
+body[data-theme="sky"] #header { background: linear-gradient(180deg, #58abdd, #4a9bd0); }
+body[data-theme="sky"] #chapter-nav { background: linear-gradient(0deg, #58abdd, #4a9bd0); }
+body[data-theme="sky"] #progress { background: rgba(255, 255, 255, .35); }
+body[data-theme="sky"] #progress-bar { background: #ffffff; }
+
+body[data-theme="night"] #header,
+body[data-theme="night"] #chapter-nav { background: #080e28; color: #ccd8f0; }
+body[data-theme="night"] #header { border-bottom: 1px solid rgba(160, 190, 255, .16); }
+body[data-theme="night"] #chapter-nav { border-top: 1px solid rgba(160, 190, 255, .16); }
+body[data-theme="night"] #progress { background: rgba(160, 190, 255, .15); }
+body[data-theme="night"] #progress-bar { background: #8fa8e8; }
+
+body[data-theme="sf"] #header,
+body[data-theme="sf"] #chapter-nav { background: #030a10; color: #4fdcef; }
+body[data-theme="sf"] #header { border-bottom: 1px solid rgba(63, 217, 236, .4); }
+body[data-theme="sf"] #chapter-nav { border-top: 1px solid rgba(63, 217, 236, .4); }
+body[data-theme="sf"] #header h1 { letter-spacing: .12em; text-shadow: 0 0 8px rgba(79, 220, 239, .45); }
+body[data-theme="sf"] #progress { background: rgba(63, 217, 236, .18); }
+body[data-theme="sf"] #progress-bar { background: #3fd9ec; }
+
+/* ===== 本棚カード・続きから読むバーのテーマ配色 ===== */
+body[data-theme="sky"] .book-card {
+  background: rgba(255, 255, 255, .76);
+  color: #173850;
+  box-shadow: 0 2px 10px rgba(30, 90, 130, .2);
+}
+body[data-theme="sky"] .book-progress { background: rgba(23, 56, 80, .15); }
+body[data-theme="sky"] .book-progress-fill { background: #3584bd; }
+body[data-theme="sky"] #resume-bar { background: rgba(29, 78, 116, .92); color: #f4faff; }
+
+body[data-theme="night"] .book-card {
+  background: rgba(19, 28, 64, .8);
+  color: #ccd8f0;
+  border: 1px solid rgba(160, 190, 255, .18);
+  box-shadow: 0 2px 10px rgba(0, 0, 10, .4);
+}
+body[data-theme="night"] .book-progress { background: rgba(160, 190, 255, .16); }
+body[data-theme="night"] .book-progress-fill { background: #8fa8e8; }
+body[data-theme="night"] .book-delete { border-left-color: rgba(160, 190, 255, .18); }
+body[data-theme="night"] #resume-bar {
+  background: rgba(12, 18, 46, .94);
+  color: #ccd8f0;
+  border: 1px solid rgba(160, 190, 255, .25);
+}
+
+body[data-theme="sf"] .book-card {
+  background: rgba(7, 18, 26, .84);
+  color: #c9eaf2;
+  border: 1px solid rgba(63, 217, 236, .3);
+  border-radius: 4px;              /* HUD感を出すため角を鋭く */
+  box-shadow: 0 0 12px rgba(63, 217, 236, .1);
+}
+body[data-theme="sf"] .book-progress { background: rgba(63, 217, 236, .15); }
+body[data-theme="sf"] .book-progress-fill { background: #3fd9ec; }
+body[data-theme="sf"] .book-delete { border-left-color: rgba(63, 217, 236, .3); }
+body[data-theme="sf"] #resume-bar {
+  background: rgba(4, 12, 18, .94);
+  color: #4fdcef;
+  border: 1px solid rgba(63, 217, 236, .4);
+  box-shadow: 0 0 12px rgba(63, 217, 236, .25);
+}
+body[data-theme="sf"] .resume-label { color: #4fdcef; }
+
+/* テーマのグラデーション背景は html に敷く（スクロールしないので画面に固定される）。
+   body に敷くと負のz-indexのテーマ装飾が背景の裏に隠れるため html 側に置く */
+html { height: 100%; background: var(--bg); background-image: var(--bg-image); }
+body { height: 100%; background: none; font-family: -apple-system, 'Hiragino Sans', 'Yu Gothic', sans-serif; }
+
+/* ===== テーマ装飾（SF：HUDコーナーブラケット） ===== */
+#theme-deco { display: none; }
+body[data-theme="sf"] #theme-deco { display: block; }
+#theme-deco i {
+  position: fixed; width: 24px; height: 24px; z-index: -1;
+  opacity: .85; pointer-events: none;
+  box-shadow: 0 0 8px rgba(63, 217, 236, .3);
+}
+#theme-deco .tl { top: 72px; left: 10px; border-top: 2px solid #3fd9ec; border-left: 2px solid #3fd9ec; }
+#theme-deco .tr { top: 72px; right: 10px; border-top: 2px solid #3fd9ec; border-right: 2px solid #3fd9ec; }
+#theme-deco .bl { bottom: 76px; left: 10px; border-bottom: 2px solid #3fd9ec; border-left: 2px solid #3fd9ec; }
+#theme-deco .br { bottom: 76px; right: 10px; border-bottom: 2px solid #3fd9ec; border-right: 2px solid #3fd9ec; }
+body[data-theme="sf"] #reader { text-shadow: 0 0 10px rgba(90, 220, 240, .12); }
 
 .hidden { display: none !important; }
 
@@ -437,7 +524,7 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 
 /* ===== プログレスバー ===== */
 #progress { height: 3px; background: var(--ui-line); flex-shrink: 0; }
-#progress-bar { height: 100%; background: #888; width: 0%; transition: width .1s; }
+#progress-bar { height: 100%; background: var(--ui-accent); width: 0%; transition: width .1s; }
 
 /* ===== 共通パネル（設定・目次）===== */
 #settings-panel, #toc-panel {
@@ -521,11 +608,14 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 .themes { display: flex; gap: 8px; flex-wrap: wrap; }
 .theme-btn {
   padding: 6px 12px; border-radius: 20px;
-  border: 1px solid var(--ui-border);
-  background: none; color: inherit;
+  border: 1px solid rgba(128, 128, 128, .45);
   font-size: 13px; cursor: pointer;
 }
-.theme-btn.active { border-color: currentColor; font-weight: bold; }
+.theme-btn.active {
+  font-weight: bold;
+  border-color: currentColor;
+  box-shadow: 0 0 0 2px currentColor;
+}
 
 /* ===== 目次パネル ===== */
 #toc-inner {
