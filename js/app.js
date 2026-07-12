@@ -369,6 +369,131 @@ function openBook(record) {
   dbPut(record).catch(() => {});
 }
 
+// ===== フォルダ =====
+// 本のレコードに folder（文字列）を持たせる。'' は未分類＝「すべて」にだけ出る。
+// フォルダ一覧は localStorage に明示的に持つ（空フォルダや並び順を保てるように）
+const SHELF_PAGE = 30;
+let currentFolder = localStorage.getItem('noovel_shelf_folder') || '';
+let shelfLimit = SHELF_PAGE;
+
+function getFolders() {
+  try { return JSON.parse(localStorage.getItem('noovel_folders') || '[]'); }
+  catch (e) { return []; }
+}
+function saveFolders(list) { localStorage.setItem('noovel_folders', JSON.stringify(list)); }
+
+function selectFolder(name) {
+  currentFolder = name;
+  localStorage.setItem('noovel_shelf_folder', name);
+  shelfLimit = SHELF_PAGE;
+  renderShelf();
+}
+
+function createFolder() {
+  const name = (prompt('新しいフォルダ名') || '').trim();
+  if (!name) return;
+  const folders = getFolders();
+  if (folders.includes(name)) { alert('同じ名前のフォルダがあります'); return; }
+  folders.push(name);
+  saveFolders(folders);
+  selectFolder(name);
+}
+
+// フォルダ名の変更・削除（タブ長押し／右クリック）
+async function manageFolder(name) {
+  const input = prompt('フォルダ名を変更（空欄にすると削除。中の本は消えません）', name);
+  if (input === null) return;
+  const newName = input.trim();
+  if (newName === name) return;
+  const folders = getFolders();
+  if (newName && folders.includes(newName)) { alert('同じ名前のフォルダがあります'); return; }
+  if (!newName && !confirm(`フォルダ「${name}」を削除しますか？（中の本は「すべて」に残ります）`)) return;
+
+  let books = [];
+  try { books = await dbGetAll(); } catch (e) {}
+  for (const b of books) {
+    if (b.folder === name) {
+      b.folder = newName;
+      await dbPut(b).catch(() => {});
+    }
+  }
+  const i = folders.indexOf(name);
+  if (newName) folders.splice(i, 1, newName);
+  else folders.splice(i, 1);
+  saveFolders(folders);
+  if (currentFolder === name) currentFolder = newName;
+  localStorage.setItem('noovel_shelf_folder', currentFolder);
+  renderShelf();
+}
+
+function renderFolderTabs() {
+  const wrap = document.getElementById('folder-tabs');
+  wrap.innerHTML = '';
+  const folders = getFolders();
+  if (currentFolder && !folders.includes(currentFolder)) currentFolder = '';
+
+  const mk = (label, value) => {
+    const b = document.createElement('button');
+    b.className = 'folder-tab' + (currentFolder === value ? ' active' : '');
+    b.textContent = label;
+    b.addEventListener('click', () => selectFolder(value));
+    if (value) {
+      let t = null;
+      b.addEventListener('touchstart', () => { t = setTimeout(() => manageFolder(value), 550); }, { passive: true });
+      b.addEventListener('touchend', () => clearTimeout(t));
+      b.addEventListener('touchmove', () => clearTimeout(t), { passive: true });
+      b.addEventListener('contextmenu', e => { e.preventDefault(); manageFolder(value); });
+    }
+    wrap.appendChild(b);
+  };
+  mk('すべて', '');
+  folders.forEach(f => mk(f, f));
+
+  const add = document.createElement('button');
+  add.className = 'folder-tab folder-add';
+  add.textContent = '＋';
+  add.setAttribute('aria-label', 'フォルダを作成');
+  add.addEventListener('click', createFolder);
+  wrap.appendChild(add);
+}
+
+// フォルダ移動パネル（カードの ⋯ から開く）
+function openFolderPicker(rec) {
+  const list = document.getElementById('folder-list');
+  list.innerHTML = '';
+  const mk = (label, value) => {
+    const b = document.createElement('button');
+    b.className = 'folder-pick-item' + ((rec.folder || '') === value ? ' active' : '');
+    b.textContent = label;
+    b.addEventListener('click', async () => {
+      if (value === '__new__') {
+        const name = (prompt('新しいフォルダ名') || '').trim();
+        if (!name) return;
+        const folders = getFolders();
+        if (!folders.includes(name)) { folders.push(name); saveFolders(folders); }
+        rec.folder = name;
+      } else {
+        rec.folder = value;
+      }
+      await dbPut(rec).catch(err => console.error('folder save failed', err));
+      document.getElementById('folder-panel').classList.add('hidden');
+      renderShelf();
+    });
+    list.appendChild(b);
+  };
+  mk('（フォルダなし）', '');
+  getFolders().forEach(f => mk(f, f));
+  mk('＋ 新しいフォルダ…', '__new__');
+  document.getElementById('folder-panel').classList.remove('hidden');
+}
+
+document.getElementById('btn-folder-cancel').addEventListener('click', () => {
+  document.getElementById('folder-panel').classList.add('hidden');
+});
+document.getElementById('folder-panel').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+});
+
 // ===== Bookshelf =====
 function formatDate(ts) {
   if (!ts) return '';
@@ -394,8 +519,16 @@ async function renderShelf() {
   }
   books.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
 
+  renderFolderTabs();
+  const shown = currentFolder ? books.filter(b => b.folder === currentFolder) : books;
+
   list.innerHTML = '';
-  emptyMsg.classList.toggle('hidden', books.length > 0);
+  emptyMsg.classList.toggle('hidden', shown.length > 0);
+  if (emptyMsg.children[1]) {
+    emptyMsg.children[1].innerHTML = books.length
+      ? 'このフォルダには本がありません'
+      : '「開く」からテキストファイルを<br>読み込んでください';
+  }
 
   // 続きから読む：下部固定ピル（最後に開いた本へ1タップで再開）
   const resume = document.getElementById('resume-bar');
@@ -416,7 +549,7 @@ async function renderShelf() {
     resume.onclick = () => openRecord(lastRec);
   }
 
-  books.forEach(rec => {
+  shown.slice(0, shelfLimit).forEach(rec => {
     const card = document.createElement('div');
     card.className = 'book-card';
 
@@ -442,6 +575,15 @@ async function renderShelf() {
     main.append(title, meta, bar);
     main.addEventListener('click', () => openRecord(rec));
 
+    const menu = document.createElement('button');
+    menu.className = 'book-menu';
+    menu.textContent = '⋯';
+    menu.setAttribute('aria-label', 'フォルダへ移動');
+    menu.addEventListener('click', e => {
+      e.stopPropagation();
+      openFolderPicker(rec);
+    });
+
     const del = document.createElement('button');
     del.className = 'book-delete';
     del.textContent = '✕';
@@ -454,9 +596,18 @@ async function renderShelf() {
       renderShelf();
     });
 
-    card.append(main, del);
+    card.append(main, menu, del);
     list.appendChild(card);
   });
+
+  // 30冊ずつの追加表示
+  if (shown.length > shelfLimit) {
+    const more = document.createElement('button');
+    more.id = 'btn-more-books';
+    more.textContent = `もっと見る（残り${shown.length - shelfLimit}冊）`;
+    more.addEventListener('click', () => { shelfLimit += SHELF_PAGE; renderShelf(); });
+    list.appendChild(more);
+  }
 }
 
 function showShelf() {
@@ -931,6 +1082,7 @@ async function exportBackup() {
     exportedAt: Date.now(),
     cfg,
     last: localStorage.getItem('noovel_last') || '',
+    folders: getFolders(),
     books,
     positions,
   };
@@ -970,6 +1122,9 @@ async function importBackup(text) {
     }
   }
   if (data.last) localStorage.setItem('noovel_last', data.last);
+  if (Array.isArray(data.folders)) {
+    saveFolders([...new Set([...getFolders(), ...data.folders.filter(f => typeof f === 'string' && f)])]);
+  }
   if (data.cfg) { cfg = { ...DEFAULTS, ...data.cfg }; saveCfg(); applyStyle(); }
 
   alert(ok === valid.length ? `${ok}冊を復元しました` : `${ok}冊を復元（${valid.length - ok}冊は失敗）`);
