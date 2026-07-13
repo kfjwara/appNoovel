@@ -176,14 +176,15 @@ function novelPageLines(container) {
   return lines;
 }
 
-// 行の並び → ブロック列。空行2つ以上で場面転換（gap）
+// 行の並び → ブロック列。空行は大きさ(n)つきのgapとして保持
 function novelPageLinesToBlocks(lines) {
   const blocks = [];
   let blankRun = 0;
   for (const l of lines) {
     const t = (l.text || '').replace(/ /g, ' ').trim();
     if (l.kind === 'blank' || !t) { blankRun++; continue; }
-    if (blankRun >= 2 && blocks.length) blocks.push({ t: 'gap' });
+    // Webページ由来は空行1つでも作者が入れた「間」なので、大きさ(n)ごと保持する
+    if (blankRun >= 1 && blocks.length) blocks.push({ t: 'gap', n: blankRun });
     blankRun = 0;
     blocks.push({ t: 'p', text: t });
   }
@@ -208,7 +209,25 @@ function novelPageToBook(doc, container) {
 
   const lines = novelPageLines(container);
 
-  // .novel-chapter（章タグ）で章に分割。無ければ全体を1章に
+  // 元テキストの控え（バックアップ用）
+  const rawText = lines
+    .map(l => l.kind === 'blank' ? '' : l.kind === 'chapter' ? '【' + l.text + '】' : (l.text || '').replace(/ /g, ' '))
+    .join('\n');
+
+  // 章タグ（.novel-chapter）が無い作品：作者が「一」「二」等の素の行で章を書いている
+  // ことが多いので、テキスト用ヒューリスティック（convertText）で章見出しを推定する
+  if (!lines.some(l => l.kind === 'chapter')) {
+    if (!rawText.trim()) return { error: '本文を取り出せませんでした（本文が空のページかもしれません）' };
+    const res = convertText(rawText, title, { gapMin: 1 });
+    if (title) res.book.title = title;
+    if (subtitle) res.book.subtitle = subtitle;
+    if (author) res.book.author = author;
+    res.warnings.unshift('小説ページとして取り込みました（章タグが無いため章見出しは本文から推定）');
+    res.rawText = rawText;
+    return res;
+  }
+
+  // .novel-chapter（章タグ）で章に分割
   const chapters = [];
   let curTitle = '';
   let buf = [];
@@ -224,11 +243,6 @@ function novelPageToBook(doc, container) {
   flush();
 
   if (!chapters.length) return { error: '本文を取り出せませんでした（本文が空のページかもしれません）' };
-
-  // 元テキストの控え（バックアップ用）
-  const rawText = lines
-    .map(l => l.kind === 'blank' ? '' : l.kind === 'chapter' ? '【' + l.text + '】' : (l.text || '').replace(/ /g, ' '))
-    .join('\n');
 
   warnings.push('小説ページとして構造ごと取り込みました');
   return { book: { title, subtitle, author, chapters }, warnings, rawText };

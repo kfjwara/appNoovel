@@ -5,7 +5,7 @@
 //   convertText(raw, stem)  → { book, warnings }   … .txt/.md 用ヒューリスティック
 //   parseNoovelJSON(raw)    → { book, warnings } | { error } … .noovel 検証
 // book = { title, subtitle, author, chapters:[{ title, blocks }] }
-// block = {t:'p',text} | {t:'h',text} | {t:'table',rows} | {t:'gap'}
+// block = {t:'p',text} | {t:'h',text} | {t:'table',rows} | {t:'gap',n?}（n=元の空行数、表示の空きに反映）
 
 // 見出しスタイル定義。rank が小さいほど上位（章になりやすい）。
 // strong=true のスタイルが1つでも活性なら、素の短行見出し推定(plainShort)は行わない。
@@ -52,6 +52,7 @@ function plainShortCandidates(lines) {
     if (i === last) continue;                          // 巻末の署名行は見出しにしない
     if (/[。．！？…、，」』）】]$/.test(t)) continue;   // 文末記号で終わる行は本文
     if (/^[「『（(＜<―─＝=]/.test(t)) continue;         // 会話・括弧・罫線は本文
+    if (!/[0-9０-９A-Za-zａ-ｚＡ-Ｚぁ-んァ-ヶ一-龠々]/.test(t)) continue; // 記号だけの行（「◇」等の場面区切り）は見出しにしない
     if (t.includes('\t') || /^\|.+\|$/.test(t)) continue; // 表
     if (i > 0 && lines[i - 1].trim()) continue;        // 直前に空行が必要
     if (matchHeadingStyle(t)) continue;                // 記号つきスタイルはそっちで扱う
@@ -61,14 +62,15 @@ function plainShortCandidates(lines) {
 }
 
 // 本文行の並びをブロック列へ
-function linesToBlocks(lines, sectionKeys) {
+// gapMin: 空きとして残す最小空行数（.txtは2、空行の意図が明確なWebページ由来は1）
+function linesToBlocks(lines, sectionKeys, gapMin = 2) {
   const blocks = [];
   let blankRun = 0;
   let i = 0;
   while (i < lines.length) {
     const t = lines[i].trim();
     if (!t) { blankRun++; i++; continue; }
-    if (blankRun >= 2 && blocks.length) blocks.push({ t: 'gap' });
+    if (blankRun >= gapMin && blocks.length) blocks.push({ t: 'gap', n: blankRun });
     blankRun = 0;
 
     // 区切り線 → 場面転換
@@ -108,8 +110,9 @@ function linesToBlocks(lines, sectionKeys) {
   return blocks;
 }
 
-function convertText(raw, stem) {
+function convertText(raw, stem, opts) {
   const warnings = [];
+  const gapMin = (opts && opts.gapMin) || 2;
   const text = raw.replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
   const lines = text.split('\n');
 
@@ -193,7 +196,7 @@ function convertText(raw, stem) {
   // 章の組み立て
   // 章見出しが1つも無い文書では、前付け＝本文全体なので「まえがき」ではなく書名を章名にする
   const chapters = [];
-  const preBlocks = linesToBlocks(preBody, sectionKeys);
+  const preBlocks = linesToBlocks(preBody, sectionKeys, gapMin);
   if (preBlocks.some(b => b.t !== 'gap')) {
     chapters.push({ title: marks.length ? 'まえがき' : title, blocks: preBlocks });
     if (!marks.length) warnings.push('章見出しを検出できませんでした。全体を1章として取り込みました');
@@ -202,13 +205,13 @@ function convertText(raw, stem) {
   marks.forEach((m, i) => {
     const end = marks[i + 1] ?? lines.length;
     const chTitle = cleanInline(lines[m].trim()) || `第${i + 1}章`;
-    const blocks = linesToBlocks(lines.slice(m + 1, end), sectionKeys);
+    const blocks = linesToBlocks(lines.slice(m + 1, end), sectionKeys, gapMin);
     chapters.push({ title: chTitle, blocks });
   });
 
   if (!chapters.length) {
     warnings.push('章見出しを検出できませんでした。全体を1章として取り込みました');
-    chapters.push({ title, blocks: linesToBlocks(lines, sectionKeys) });
+    chapters.push({ title, blocks: linesToBlocks(lines, sectionKeys, gapMin) });
   }
 
   return { book: { title, subtitle, author, chapters }, warnings };
@@ -302,7 +305,9 @@ function parseNoovelJSON(raw) {
           if (typeof b.text === 'string' && b.text.trim()) blocks.push({ t: b.t, text: b.text });
           else warnings.push(`chapters[${i}] にtextの無いブロックがあり、飛ばしました`);
         } else if (b.t === 'gap') {
-          blocks.push({ t: 'gap' });
+          const g = { t: 'gap' };
+          if (typeof b.n === 'number' && b.n >= 1) g.n = Math.floor(b.n);
+          blocks.push(g);
         } else if (b.t === 'table' && Array.isArray(b.rows)) {
           const rows = b.rows.filter(r => Array.isArray(r)).map(r => r.map(c => String(c)));
           if (rows.length) blocks.push({ t: 'table', rows });

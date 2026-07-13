@@ -280,6 +280,8 @@ function renderChapter(idx, pos = {}) {
     } else if (b.t === 'gap') {
       el = document.createElement('div');
       el.className = 'scene-gap';
+      // n = 元の空行数。大きさを反映する（省略時は従来の2.2em＝n:2相当、上限4）
+      if (b.n) el.style.height = (Math.min(b.n, 4) * 1.1) + 'em';
     } else if (b.t === 'table') {
       el = document.createElement('div');
       el.className = 'table-wrap';

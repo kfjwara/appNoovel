@@ -71,11 +71,37 @@
     const { book } = convertText('第一章　A\n本文**強調**あり。\n\n\n次の段。\n---\n最後。', 'stem');
     eq(book.chapters[0].blocks, [
       { t: 'p', text: '本文強調あり。' },
-      { t: 'gap' },
+      { t: 'gap', n: 2 },
       { t: 'p', text: '次の段。' },
       { t: 'gap' },
       { t: 'p', text: '最後。' },
     ]);
+  });
+
+  t('gapMin:1なら空行1つも大きさ(n)つきで残る', () => {
+    const { book } = convertText('第一章　A\n一段目。\n二行目。\n\n二段目。\n\n\n\n三段目。', 'stem', { gapMin: 1 });
+    eq(book.chapters[0].blocks, [
+      { t: 'p', text: '一段目。' },
+      { t: 'p', text: '二行目。' },
+      { t: 'gap', n: 1 },
+      { t: 'p', text: '二段目。' },
+      { t: 'gap', n: 3 },
+      { t: 'p', text: '三段目。' },
+    ]);
+  });
+
+  t('既定(gapMin:2)では空行1つは空きにならない', () => {
+    const { book } = convertText('第一章　A\n一段目。\n\n二段目。', 'stem');
+    eq(book.chapters[0].blocks, [
+      { t: 'p', text: '一段目。' },
+      { t: 'p', text: '二段目。' },
+    ]);
+  });
+
+  t('記号だけの短行（場面区切り）は章見出しに推定しない', () => {
+    const { book } = convertText(
+      '一\n\n一章の本文。これは本文です。\n\n◇\n\n続きの本文。これも本文です。\n\n二\n\n二章の本文。おわり。', 'stem', { gapMin: 1 });
+    eq(book.chapters.map(c => c.title), ['一', '二'], '「◇」は章にならず数字だけが章になる');
   });
 
   t('見出しが無ければ全体を1章にして警告', () => {
@@ -104,6 +130,15 @@
     eq(r.book.author, 'A');
     eq(r.book.chapters[0].blocks.length, 3);
     eq(r.warnings.length, 0);
+  });
+
+  t('gapのn（空きの大きさ）は検証を通っても保持される', () => {
+    const r = parseNoovelJSON(JSON.stringify({
+      noovel: 1, title: 'T',
+      chapters: [{ title: 'C', blocks: [{ t: 'p', text: 'a' }, { t: 'gap', n: 3 }, { t: 'p', text: 'b' }] }],
+    }));
+    ok(!r.error);
+    eq(r.book.chapters[0].blocks[1], { t: 'gap', n: 3 });
   });
 
   t('簡易形（textを改行区切りで持つ）も読める', () => {
