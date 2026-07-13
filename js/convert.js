@@ -13,7 +13,8 @@ const HEADING_STYLES = [
   { key: 'mdH1',       rank: 0, strong: true,  min: 1, md: true,  re: /^#\s+\S/ },
   { key: 'chapterNum', rank: 1, strong: true,  min: 1, md: false, re: /^(第[一二三四五六七八九十百千0-9０-９]+[章話部編幕節]|序章|終章|序幕|終幕|プロローグ|エピローグ)/ },
   { key: 'mdH2',       rank: 2, strong: true,  min: 1, md: true,  re: /^##\s+\S/ },
-  { key: 'bracket',    rank: 3, strong: false, min: 2, md: false, re: /^【.+】$/ },
+  // reject: 中身に文の句読点がある【】は見出しではなく筆談・メッセージ等の会話描写
+  { key: 'bracket',    rank: 3, strong: false, min: 2, md: false, re: /^【.+】$/, reject: /[。、．，！？…]/ },
   { key: 'bullet',     rank: 4, strong: false, min: 2, md: false, re: /^[■◆●▲★☆]\s*\S/ },
   { key: 'mdH3',       rank: 5, strong: true,  min: 1, md: true,  re: /^###\s+\S/ },
   { key: 'numbered',   rank: 6, strong: false, min: 2, md: false, re: /^[0-9０-９]{1,2}[.．、]\s*\S/ },
@@ -23,6 +24,7 @@ const HEADING_STYLES = [
 function matchHeadingStyle(t) {
   for (const s of HEADING_STYLES) {
     if (!s.re.test(t)) continue;
+    if (s.reject && s.reject.test(t)) continue;
     if (!s.md && (t.length > 40 || /[。、．，]$/.test(t))) return null;
     return s;
   }
