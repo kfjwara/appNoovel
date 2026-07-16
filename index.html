@@ -32,6 +32,15 @@
   <div id="reader-wrap">
     <div id="shelf">
       <div id="tag-chips"></div>
+      <div id="sort-row">
+        <button id="sort-btn" aria-label="並び替え">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="none"
+               stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
+            <path d="M3 5h10"/><path d="M3 10h7"/><path d="M3 15h4"/>
+            <path d="M15 7v9"/><path d="M12.5 13.5 15 16l2.5-2.5"/>
+          </svg>
+        </button>
+      </div>
       <button id="resume-bar" class="hidden"></button>
       <div id="shelf-empty">
         <p>📖</p>
@@ -144,6 +153,21 @@
     <button id="btn-tag-close">閉じる</button>
   </div>
 </div>
+
+<!-- 並び替えシート -->
+<div id="sort-panel" class="hidden">
+  <div id="sort-inner">
+    <strong>並び替え</strong>
+    <button class="sort-item" data-sort="recent">最終閲覧順<small>最近読んだ本が上。読むたび自動で並びます</small></button>
+    <button class="sort-item" data-sort="added">追加順<small>本棚に入れた順（新しい順）</small></button>
+    <button class="sort-item" data-sort="title">タイトル順<small>#1, #2… のシリーズが番号順に並びます</small></button>
+    <small id="sort-state"></small>
+    <button id="btn-sort-close">閉じる</button>
+  </div>
+</div>
+
+<!-- 保存トースト -->
+<div id="toast"></div>
 
 <!-- 貼り付け取り込みパネル -->
 <div id="paste-panel" class="hidden">

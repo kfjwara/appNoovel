@@ -355,6 +355,32 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   border-radius: 12px;
   box-shadow: 0 1px 4px rgba(0,0,0,.08);
   overflow: hidden;
+  position: relative;
+}
+.book-card.dragging {
+  z-index: 5;
+  box-shadow: 0 6px 20px rgba(0,0,0,.25);
+}
+.book-card.anim { transition: transform .22s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .book-card.anim { transition: none; }
+}
+
+/* ドラッグハンドル（常時表示・幅20px。判定はカード全高ぶんある） */
+.drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  border-right: 1px solid var(--ui-line);
+  font-size: 13px;
+  opacity: .4;
+  cursor: grab;
+  touch-action: none;   /* 縦スクロールと喧嘩させない要 */
 }
 
 .book-main {
@@ -440,6 +466,94 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 }
 .tag-chip.active { border-color: currentColor; font-weight: bold; opacity: 1; }
 .tag-add { opacity: .5; }
+
+/* ===== 並び替え ===== */
+#sort-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 0 10px;
+}
+#sort-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 32px;
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: .6;
+  cursor: pointer;
+  border-radius: 8px;
+}
+#sort-btn:active { background: var(--ui-active); }
+
+#sort-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 110;
+}
+#sort-inner {
+  width: 100%;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  border-radius: 16px 16px 0 0;
+  padding: 24px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.sort-item {
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--ui-border);
+  background: none;
+  color: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  text-align: left;
+}
+.sort-item.active { border-color: currentColor; font-weight: bold; }
+.sort-item small {
+  display: block;
+  font-size: 11px;
+  opacity: .55;
+  font-weight: normal;
+  margin-top: 2px;
+}
+#sort-state { font-size: 11px; opacity: .55; line-height: 1.6; }
+#btn-sort-close {
+  background: #555;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 32px;
+  transform: translateX(-50%) translateY(8px);
+  background: var(--ui-text);
+  color: var(--ui-bg);
+  font-size: 13px;
+  padding: 8px 18px;
+  border-radius: 18px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s, transform .25s;
+  z-index: 120;
+}
+#toast.show { opacity: .92; transform: translateX(-50%) translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  #toast { transition: none; }
+}
 
 .book-menu {
   background: none;

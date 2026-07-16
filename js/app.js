@@ -541,6 +541,143 @@ document.getElementById('tag-panel').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeTagPanel();
 });
 
+// ===== 並び替え =====
+// 並び順は recent（最終閲覧）/ added（追加）/ title（タイトル）/ custom（手動調整済み）。
+// ≡ハンドルのドラッグで並べ替えた時点で custom に遷移し、自動の並びは解除される。
+let sortMode = localStorage.getItem('noovel_shelf_sort') || 'recent';
+const SORT_LABELS = { recent: '最終閲覧順', added: '追加順', title: 'タイトル順' };
+
+function getCustomOrder() {
+  try { return JSON.parse(localStorage.getItem('noovel_custom_order') || '[]'); }
+  catch (e) { return []; }
+}
+function saveCustomOrder(list) { localStorage.setItem('noovel_custom_order', JSON.stringify(list)); }
+function setSortMode(m) { sortMode = m; localStorage.setItem('noovel_shelf_sort', m); }
+
+function sortBooks(books) {
+  const arr = [...books];
+  if (sortMode === 'added') {
+    arr.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  } else if (sortMode === 'title') {
+    arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ja', { numeric: true }));
+  } else if (sortMode === 'custom') {
+    const order = getCustomOrder();
+    // 手動並びに無い本（並べたあとに取り込んだ本）は追加順で一番上に置く
+    arr.sort((a, b) => {
+      const ia = order.indexOf(a.id), ib = order.indexOf(b.id);
+      if (ia === -1 && ib === -1) return (b.addedAt || 0) - (a.addedAt || 0);
+      if (ia === -1) return -1;
+      if (ib === -1) return 1;
+      return ia - ib;
+    });
+  } else {
+    arr.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
+  }
+  return arr;
+}
+
+function syncSortState() {
+  document.querySelectorAll('.sort-item').forEach(b =>
+    b.classList.toggle('active', b.dataset.sort === sortMode));
+  document.getElementById('sort-state').textContent =
+    sortMode === 'custom'
+      ? '現在は手動で調整した並びです。選び直すと並べ替えます'
+      : `現在は${SORT_LABELS[sortMode]}です。≡をドラッグすると並びが固定されます`;
+}
+
+document.getElementById('sort-btn').addEventListener('click', () => {
+  syncSortState();
+  document.getElementById('sort-panel').classList.remove('hidden');
+});
+document.getElementById('btn-sort-close').addEventListener('click', () => {
+  document.getElementById('sort-panel').classList.add('hidden');
+});
+document.getElementById('sort-panel').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+});
+document.querySelectorAll('.sort-item').forEach(b => {
+  b.addEventListener('click', () => {
+    setSortMode(b.dataset.sort);
+    document.getElementById('sort-panel').classList.add('hidden');
+    renderShelf(true);
+  });
+});
+
+let toastTimer = null;
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+}
+
+// タグ絞り込み中は「表示中の本同士の相対順」だけ入れ替え、非表示の本の位置は崩さない
+async function commitShelfReorder(rendered, from, to, allBooks) {
+  const full = sortBooks(allBooks).map(b => b.id);
+  const shownIds = rendered.map(b => b.id);
+  const newSeq = [...shownIds];
+  const [moved] = newSeq.splice(from, 1);
+  newSeq.splice(to, 0, moved);
+  const shownSet = new Set(shownIds);
+  let k = 0;
+  saveCustomOrder(full.map(id => (shownSet.has(id) ? newSeq[k++] : id)));
+  setSortMode('custom');
+}
+
+// ドラッグで並べ替え（≡ハンドルのみ反応。カード本体のタップ・縦スクロールは今まで通り）
+function attachDragHandle(handle, card, index, rendered, allBooks) {
+  handle.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const cards = [...document.getElementById('shelf-list').children]
+      .filter(c => c.classList.contains('book-card'));
+    const rects = cards.map(c => c.getBoundingClientRect());
+    const from = index;
+    const myH = rects[from].height + 12;   // 12 = #shelf-list の gap
+    let to = from;
+    card.classList.add('dragging');
+
+    const onMove = ev => {
+      const dy = ev.clientY - e.clientY;
+      card.style.transform = `translateY(${dy}px) scale(1.02)`;
+      const centerY = rects[from].top + rects[from].height / 2 + dy;
+      to = from;
+      for (let i = 0; i < rects.length; i++) {
+        if (i === from) continue;
+        const mid = rects[i].top + rects[i].height / 2;
+        if (i < from && centerY < mid) to = Math.min(to, i);
+        if (i > from && centerY > mid) to = Math.max(to, i);
+      }
+      cards.forEach((c, i) => {
+        if (c === card) return;
+        c.classList.add('anim');
+        if (i > from && i <= to) c.style.transform = `translateY(${-myH}px)`;
+        else if (i < from && i >= to) c.style.transform = `translateY(${myH}px)`;
+        else c.style.transform = '';
+      });
+    };
+
+    const onUp = async () => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onUp);
+      card.classList.remove('dragging');
+      cards.forEach(c => { c.style.transform = ''; c.classList.remove('anim'); });
+      if (to !== from) {
+        const wasAuto = sortMode !== 'custom';
+        await commitShelfReorder(rendered, from, to, allBooks);
+        showToast(wasAuto ? '並び順を固定しました（自動の並びは解除）' : '並び順を保存しました');
+      }
+      renderShelf();
+    };
+
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onUp);
+  });
+}
+
 // ===== Bookshelf =====
 function formatDate(ts) {
   if (!ts) return '';
@@ -555,7 +692,7 @@ function bookProgress(rec) {
   return Math.max(0, Math.min(1, p));
 }
 
-async function renderShelf() {
+async function renderShelf(animate) {
   const list = document.getElementById('shelf-list');
   const emptyMsg = document.getElementById('shelf-empty');
   let books = [];
@@ -564,10 +701,18 @@ async function renderShelf() {
   } catch (err) {
     console.error('library load failed', err);
   }
-  books.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
+  books = sortBooks(books);
 
   renderTagChips();
   const shown = currentTag ? books.filter(b => recTags(b).includes(currentTag)) : books;
+
+  // 並び替え切替をFLIPで滑らかに（切替前の位置を覚えておく）
+  const firstTop = {};
+  if (animate) {
+    [...list.children].forEach(el => {
+      if (el.dataset && el.dataset.id) firstTop[el.dataset.id] = el.getBoundingClientRect().top;
+    });
+  }
 
   list.innerHTML = '';
   emptyMsg.classList.toggle('hidden', shown.length > 0);
@@ -596,9 +741,17 @@ async function renderShelf() {
     resume.onclick = () => openRecord(lastRec);
   }
 
-  shown.slice(0, shelfLimit).forEach(rec => {
+  const rendered = shown.slice(0, shelfLimit);
+  rendered.forEach((rec, idx) => {
     const card = document.createElement('div');
     card.className = 'book-card';
+    card.dataset.id = rec.id;
+
+    const handle = document.createElement('button');
+    handle.className = 'drag-handle';
+    handle.textContent = '≡';
+    handle.setAttribute('aria-label', 'ドラッグで並べ替え');
+    attachDragHandle(handle, card, idx, rendered, books);
 
     const main = document.createElement('button');
     main.className = 'book-main';
@@ -657,7 +810,7 @@ async function renderShelf() {
       renderShelf();
     });
 
-    card.append(main, menu, del);
+    card.append(handle, main, menu, del);
     list.appendChild(card);
   });
 
@@ -668,6 +821,21 @@ async function renderShelf() {
     more.textContent = `もっと見る（残り${shown.length - shelfLimit}冊）`;
     more.addEventListener('click', () => { shelfLimit += SHELF_PAGE; renderShelf(); });
     list.appendChild(more);
+  }
+
+  if (animate) {
+    [...list.children].forEach(el => {
+      const prev = el.dataset ? firstTop[el.dataset.id] : undefined;
+      if (prev === undefined) return;
+      const dy = prev - el.getBoundingClientRect().top;
+      if (!dy) return;
+      el.style.transform = `translateY(${dy}px)`;
+      requestAnimationFrame(() => {
+        el.classList.add('anim');
+        el.style.transform = '';
+        el.addEventListener('transitionend', () => el.classList.remove('anim'), { once: true });
+      });
+    });
   }
 }
 
@@ -1144,6 +1312,7 @@ async function exportBackup() {
     cfg,
     last: localStorage.getItem('noovel_last') || '',
     tags: getTags(),
+    sort: { mode: sortMode, order: getCustomOrder() },
     books,
     positions,
   };
@@ -1189,6 +1358,14 @@ async function importBackup(text) {
     ...(Array.isArray(data.folders) ? data.folders : []),
   ].filter(t => typeof t === 'string' && t);
   if (importedTags.length) saveTags([...new Set([...getTags(), ...importedTags])]);
+  if (data.sort && typeof data.sort === 'object') {
+    if (typeof data.sort.mode === 'string' && (data.sort.mode in SORT_LABELS || data.sort.mode === 'custom')) {
+      setSortMode(data.sort.mode);
+    }
+    if (Array.isArray(data.sort.order)) {
+      saveCustomOrder(data.sort.order.filter(x => typeof x === 'string'));
+    }
+  }
   if (data.cfg) { cfg = { ...DEFAULTS, ...data.cfg }; saveCfg(); applyStyle(); }
 
   // 旧バックアップの本（folder持ち）をtagsへ変換
