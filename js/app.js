@@ -117,6 +117,28 @@ function decodeBuffer(buf) {
   catch (e) { return { text: new TextDecoder('shift_jis').decode(buf), enc: 'shift_jis' }; }
 }
 
+// ===== シリーズ判定 =====
+// pixivの「#話数 シリーズ名＋巻数」形式のタイトルから話数・シリーズ名を推定する
+function zenToHan(s) {
+  return s.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0));
+}
+
+// 話数：先頭の #N を優先。なければ末尾の数字（全角可・【前編】等のカッコ書きは無視）
+function detectEpisode(title) {
+  let m = title.match(/^#\s*(\d+)/);
+  if (m) return +m[1];
+  m = zenToHan(title).replace(/[（(【\[].*?[】\])）]\s*$/, '').match(/(\d+)\s*$/);
+  return m ? +m[1] : null;
+}
+
+// シリーズ名：#N と末尾の巻数・前後編表記を削った残り
+function detectSeriesName(title) {
+  let t = title.replace(/^#\s*\d+\s*/, '');
+  t = t.replace(/[　\s]*[（(【]?(前|中|後)編[）)】]?[　\s]*$/, '');
+  t = t.replace(/[　\s]*[（(]?[0-9０-９]+[）)]?[　\s]*$/, '').trim();
+  return t || null;
+}
+
 function finishImport(res, name, raw) {
   if (res.warnings.length) alert('取り込みメモ：\n・' + res.warnings.join('\n・'));
 
@@ -131,6 +153,15 @@ function finishImport(res, name, raw) {
     addedAt: now,
     lastReadAt: now,
   };
+  // シリーズ自動判定（「#話数 〜」形式のときだけ。取り込み時のみ働き、あとは情報タブで直せる）
+  if (/^#\s*\d+/.test(record.title)) {
+    const sname = detectSeriesName(record.title);
+    if (sname) {
+      record.series = sname;
+      record.episode = detectEpisode(record.title);
+      showToast(`シリーズ「${sname}」の #${record.episode} として登録しました`);
+    }
+  }
   dbPut(record).catch(err => console.error('library save failed', err));
   openBook(record);
 }
@@ -327,6 +358,7 @@ function updateChapterNav() {
   document.getElementById('btn-prev-ch').disabled = currentChapter === 0;
   document.getElementById('btn-next-ch').disabled = currentChapter === book.chapters.length - 1;
   updateSeekBar();
+  renderEpisodeLinks(reader);   // シリーズの前後の話への導線（第1章の頭・最終章の末尾）
 }
 
 function highlightToc() {
@@ -519,10 +551,23 @@ async function saveBookInfo() {
     if (rec.noovel) rec.noovel.author = author;
     dirty = true;
   }
+  const series = document.getElementById('edit-series').value.trim();
+  if (series !== (rec.series || '')) {
+    if (series) rec.series = series; else delete rec.series;
+    dirty = true;
+  }
+  const epRaw = document.getElementById('edit-episode').value.trim();
+  const ep = epRaw === '' ? null : parseInt(zenToHan(epRaw), 10);
+  if (!(epRaw !== '' && isNaN(ep)) && ep !== (rec.episode == null ? null : rec.episode)) {
+    if (ep == null) delete rec.episode; else rec.episode = ep;
+    dirty = true;
+  }
   if (dirty) await dbPut(rec).catch(err => console.error('info save failed', err));
 }
 document.getElementById('edit-title').addEventListener('change', saveBookInfo);
 document.getElementById('edit-author').addEventListener('change', saveBookInfo);
+document.getElementById('edit-series').addEventListener('change', saveBookInfo);
+document.getElementById('edit-episode').addEventListener('change', saveBookInfo);
 
 function setEditTab(tab) {
   document.querySelectorAll('#edit-tabs .edit-tab').forEach(b =>
@@ -539,6 +584,8 @@ function openTagEditor(rec) {
   if (!isReopen) {
     document.getElementById('edit-title').value = rec.title || '';
     document.getElementById('edit-author').value = rec.author || '';
+    document.getElementById('edit-series').value = rec.series || '';
+    document.getElementById('edit-episode').value = rec.episode == null ? '' : rec.episode;
     setEditTab('tags');   // 開いたときはタグタブから
   }
   const list = document.getElementById('tag-list');
@@ -804,6 +851,393 @@ function bookProgress(rec) {
   return Math.max(0, Math.min(1, p));
 }
 
+// ===== 選択モード（シリーズにまとめる／本を追加／本をはずす） =====
+let selectMode = false;
+let selectPurpose = 'make';        // 'make'＝新規にまとめる / 'add'＝既存シリーズへ追加 / 'remove'＝シリーズからはずす
+let selectTargetSeries = null;     // add / remove の対象シリーズ名
+const selSet = new Set();
+
+const SELECT_LABELS = { make: 'シリーズにまとめる', add: 'このシリーズに追加', remove: 'シリーズからはずす' };
+
+// 選択モードはシリーズ一覧（■×4）の中から入る。完了／キャンセル後はシリーズ一覧に戻る
+function enterSelectMode(purpose, target) {
+  selectMode = true;
+  selectPurpose = purpose || 'make';
+  selectTargetSeries = target || null;
+  selSet.clear();
+  document.body.classList.add('selecting');
+  const left = document.getElementById('btn-left');
+  left.textContent = 'キャンセル';
+  left.dataset.mode = 'cancel-select';
+  document.getElementById('btn-make-series').textContent = SELECT_LABELS[selectPurpose];
+  document.getElementById('select-actbar').classList.remove('hidden');
+  updateSelectUi();
+  renderShelf();
+}
+
+function exitSelectMode() {
+  selectMode = false;
+  selectPurpose = 'make';
+  selectTargetSeries = null;
+  selSet.clear();
+  document.body.classList.remove('selecting');
+  const left = document.getElementById('btn-left');
+  left.textContent = '開く';
+  left.dataset.mode = 'open';
+  document.getElementById('header-title').textContent = 'Noovel';
+  document.getElementById('select-actbar').classList.add('hidden');
+  renderShelf();
+}
+
+function updateSelectUi() {
+  document.getElementById('header-title').textContent = `${selSet.size}冊を選択中`;
+  // 新規まとめは2冊以上、追加・はずすは1冊から
+  document.getElementById('btn-make-series').disabled = selSet.size < (selectPurpose === 'make' ? 2 : 1);
+}
+
+
+// 「シリーズにまとめる」→ 確認シート
+let pendingSeriesPicks = null;
+
+document.getElementById('btn-make-series').addEventListener('click', async () => {
+  let books = [];
+  try { books = await dbGetAll(); } catch (err) { console.error(err); return; }
+  const picks = books.filter(b => selSet.has(b.id));
+  if (!picks.length) return;
+
+  // 既存シリーズへ追加：話数はタイトルから推定、取れなければ末尾に足す
+  if (selectPurpose === 'add' && selectTargetSeries) {
+    const members = books.filter(b => b.series === selectTargetSeries);
+    let maxEp = members.reduce((m, b) => Math.max(m, b.episode == null ? 0 : b.episode), 0);
+    for (const rec of picks) {
+      rec.series = selectTargetSeries;
+      const ep = detectEpisode(rec.title);
+      rec.episode = ep == null ? ++maxEp : ep;
+      await dbPut(rec).catch(err => console.error('series save failed', err));
+    }
+    showToast(`「${selectTargetSeries}」に${picks.length}冊を追加しました`);
+    exitSelectMode();
+    return;
+  }
+
+  // シリーズからはずす
+  if (selectPurpose === 'remove') {
+    for (const rec of picks) {
+      delete rec.series;
+      delete rec.episode;
+      await dbPut(rec).catch(err => console.error('series save failed', err));
+    }
+    showToast(`${picks.length}冊をシリーズからはずしました`);
+    exitSelectMode();
+    return;
+  }
+
+  if (picks.length < 2) return;
+  // 読む順＝タイトルから推定した話数の昇順（取れない本は末尾）
+  picks.sort((a, b) => {
+    const ea = detectEpisode(a.title), eb = detectEpisode(b.title);
+    return (ea == null ? 9999 : ea) - (eb == null ? 9999 : eb);
+  });
+  // シリーズ名の先埋め＝推定名の多数決
+  const names = picks.map(p => detectSeriesName(p.title)).filter(Boolean);
+  const top = names.slice().sort((a, b) =>
+    names.filter(n => n === b).length - names.filter(n => n === a).length)[0] || '';
+  document.getElementById('series-name').value = top;
+
+  const order = document.getElementById('series-order');
+  order.innerHTML = '';
+  picks.forEach((p, i) => {
+    const ep = detectEpisode(p.title);
+    const row = document.createElement('div');
+    row.className = 'series-order-item';
+    const badge = document.createElement('span');
+    badge.className = 'ep-badge';
+    badge.textContent = '#' + (ep == null ? (i + 1) : ep);
+    const t = document.createElement('span');
+    t.className = 'series-order-title';
+    t.textContent = p.title;
+    row.append(badge, t);
+    order.appendChild(row);
+  });
+
+  pendingSeriesPicks = picks;
+  document.getElementById('series-panel').classList.remove('hidden');
+});
+
+document.getElementById('btn-series-cancel').addEventListener('click', () => {
+  document.getElementById('series-panel').classList.add('hidden');
+});
+document.getElementById('series-panel').addEventListener('click', e => {
+  if (e.target === e.currentTarget) document.getElementById('series-panel').classList.add('hidden');
+});
+
+document.getElementById('btn-series-ok').addEventListener('click', async () => {
+  const name = document.getElementById('series-name').value.trim();
+  if (!name || !pendingSeriesPicks) { document.getElementById('series-name').focus(); return; }
+  for (let i = 0; i < pendingSeriesPicks.length; i++) {
+    const rec = pendingSeriesPicks[i];
+    rec.series = name;
+    const ep = detectEpisode(rec.title);
+    rec.episode = ep == null ? i + 1 : ep;
+    await dbPut(rec).catch(err => console.error('series save failed', err));
+  }
+  document.getElementById('series-panel').classList.add('hidden');
+  showToast(`「${name}」に${pendingSeriesPicks.length}冊をまとめました`);
+  pendingSeriesPicks = null;
+  exitSelectMode();
+});
+
+// ===== シリーズの前後の話（読書画面の導線） =====
+// dir=+1: episodeが今より大きい中で最小（次の話） / dir=-1: 小さい中で最大（前の話）
+async function findAdjacentEpisode(rec, dir) {
+  if (!rec || !rec.series || rec.episode == null) return null;
+  let books = [];
+  try { books = await dbGetAll(); } catch (e) { return null; }
+  const sibs = books.filter(b => b.series === rec.series && b.id !== rec.id && b.episode != null);
+  if (dir > 0) {
+    return sibs.filter(b => b.episode > rec.episode)
+      .sort((a, b) => a.episode - b.episode)[0] || null;
+  }
+  return sibs.filter(b => b.episode < rec.episode)
+    .sort((a, b) => b.episode - a.episode)[0] || null;
+}
+
+function buildEpisodeLink(rec, dir) {
+  const card = document.createElement('button');
+  card.className = 'episode-link' + (dir > 0 ? '' : ' prev');
+  const label = document.createElement('div');
+  label.className = 'ep-label';
+  label.textContent = dir > 0 ? '次の話' : '前の話';
+  const t = document.createElement('div');
+  t.className = 'ep-title';
+  t.textContent = (dir > 0 ? '▶ ' : '◀ ') + rec.title;
+  card.append(label, t);
+  card.addEventListener('click', () => openRecord(rec));
+  return card;
+}
+
+// 最終章の末尾に「次の話」「前の話」をまとめて差し込む（無ければ何も出さない）
+async function renderEpisodeLinks(reader) {
+  if (!currentRecord || !book) return;
+  const rec = currentRecord, ch = currentChapter;
+  if (ch !== book.chapters.length - 1) return;
+  const next = await findAdjacentEpisode(rec, 1);
+  const prev = await findAdjacentEpisode(rec, -1);
+  if (currentRecord !== rec || currentChapter !== ch) return;   // 探している間に別の場所へ移動していたら何もしない
+  if (!next && !prev) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'episode-links';
+  if (next) wrap.appendChild(buildEpisodeLink(next, 1));
+  if (prev) wrap.appendChild(buildEpisodeLink(prev, -1));
+  reader.appendChild(wrap);
+}
+
+// ===== シリーズ一覧ビュー（■×4アイコン） =====
+let seriesView = false;
+let openSeriesName = null;   // 開いているシリーズ名（null＝一覧）
+
+document.getElementById('series-btn').addEventListener('click', () => {
+  if (selectMode) return;
+  seriesView = !seriesView;
+  openSeriesName = null;
+  document.getElementById('series-btn').classList.toggle('on', seriesView);
+  renderShelf();
+});
+
+// ===== シリーズ編集シート（名前変更・本を追加・本をはずす・解散） =====
+function closeSeriesEdit() {
+  document.getElementById('series-edit-panel').classList.add('hidden');
+}
+document.getElementById('btn-series-edit-close').addEventListener('click', closeSeriesEdit);
+document.getElementById('series-edit-panel').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSeriesEdit();
+});
+
+// 名前変更：全メンバーの series を一括書き換え（既存シリーズと同名にしたら合流する）
+document.getElementById('se-rename').addEventListener('click', async () => {
+  const cur = openSeriesName;
+  const name = (prompt('シリーズ名を変更', cur) || '').trim();
+  if (!name || name === cur) return;
+  let books = [];
+  try { books = await dbGetAll(); } catch (err) { console.error(err); return; }
+  for (const b of books.filter(x => x.series === cur)) {
+    b.series = name;
+    await dbPut(b).catch(err => console.error('series save failed', err));
+  }
+  openSeriesName = name;
+  closeSeriesEdit();
+  showToast(`シリーズ名を「${name}」に変更しました`);
+  renderShelf();
+});
+
+document.getElementById('se-add').addEventListener('click', () => {
+  const target = openSeriesName;
+  closeSeriesEdit();
+  enterSelectMode('add', target);
+});
+
+document.getElementById('se-remove').addEventListener('click', () => {
+  const target = openSeriesName;
+  closeSeriesEdit();
+  enterSelectMode('remove', target);
+});
+
+document.getElementById('se-dissolve').addEventListener('click', async () => {
+  const cur = openSeriesName;
+  if (!confirm(`シリーズ「${cur}」を解散しますか？（本は消えません）`)) return;
+  let books = [];
+  try { books = await dbGetAll(); } catch (err) { console.error(err); return; }
+  for (const b of books.filter(x => x.series === cur)) {
+    delete b.series;
+    delete b.episode;
+    await dbPut(b).catch(err => console.error('series save failed', err));
+  }
+  openSeriesName = null;
+  closeSeriesEdit();
+  showToast(`「${cur}」を解散しました`);
+  renderShelf();
+});
+
+function renderSeriesView(list, books) {
+  const groups = new Map();
+  books.forEach(b => {
+    if (!b.series) return;
+    if (!groups.has(b.series)) groups.set(b.series, []);
+    groups.get(b.series).push(b);
+  });
+  groups.forEach(arr => arr.sort((a, b) =>
+    (a.episode == null ? 9999 : a.episode) - (b.episode == null ? 9999 : b.episode)));
+
+  // シリーズの中身（話数順）
+  if (openSeriesName && groups.has(openSeriesName)) {
+    const back = document.createElement('button');
+    back.className = 'series-back';
+    back.textContent = '‹ シリーズ一覧';
+    back.addEventListener('click', () => { openSeriesName = null; renderShelf(); });
+    list.appendChild(back);
+
+    // 見出し行：シリーズ名＋⋯（シリーズ編集シート）
+    const head = document.createElement('div');
+    head.className = 'series-head';
+    const hname = document.createElement('div');
+    hname.className = 'series-head-name';
+    hname.textContent = openSeriesName;
+    const hedit = document.createElement('button');
+    hedit.className = 'series-head-edit';
+    hedit.textContent = '⋯';
+    hedit.setAttribute('aria-label', 'シリーズを編集');
+    hedit.addEventListener('click', () => {
+      document.getElementById('series-edit-title').textContent = openSeriesName;
+      document.getElementById('series-edit-panel').classList.remove('hidden');
+    });
+    head.append(hname, hedit);
+    list.appendChild(head);
+
+    groups.get(openSeriesName).forEach(rec => {
+      const card = document.createElement('div');
+      card.className = 'book-card';
+      card.dataset.id = rec.id;
+      const badge = document.createElement('span');
+      badge.className = 'ep-badge';
+      badge.textContent = '#' + (rec.episode == null ? '?' : rec.episode);
+      const main = buildBookMain(rec, false);
+      main.addEventListener('click', () => openRecord(rec));
+      card.append(badge, main);
+      list.appendChild(card);
+    });
+    return;
+  }
+
+  // シリーズ一覧（見出し「シリーズ」＋新規作成の＋）
+  openSeriesName = null;
+  const listHead = document.createElement('div');
+  listHead.className = 'series-list-head';
+  const listTitle = document.createElement('div');
+  listTitle.className = 'series-list-title';
+  listTitle.textContent = 'シリーズ';
+  const addBtn = document.createElement('button');
+  addBtn.className = 'series-add-btn';
+  addBtn.setAttribute('aria-label', 'シリーズを作る');
+  addBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M10 4v12"/><path d="M4 10h12"/></svg>';
+  addBtn.addEventListener('click', () => enterSelectMode('make'));
+  listHead.append(listTitle, addBtn);
+  list.appendChild(listHead);
+
+  if (!groups.size) {
+    const p = document.createElement('div');
+    p.className = 'series-empty';
+    p.textContent = 'シリーズはまだありません。右上の＋から本を2冊以上えらんでまとめられます';
+    list.appendChild(p);
+    return;
+  }
+  groups.forEach((arr, name) => {
+    const read = arr.filter(b => Math.round(bookProgress(b) * 100) >= 100).length;
+    const next = arr.find(b => Math.round(bookProgress(b) * 100) < 100);
+    const row = document.createElement('button');
+    row.className = 'series-row';
+    const icon = document.createElement('span');
+    icon.className = 'series-icon';
+    icon.innerHTML = '<svg width="15" height="15" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">'
+      + '<rect x="3" y="3" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="3" width="5.5" height="5.5" rx="1"/>'
+      + '<rect x="3" y="11.5" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1"/></svg>';
+    const mainEl = document.createElement('div');
+    mainEl.className = 'series-main';
+    const nm = document.createElement('div');
+    nm.className = 'series-name';
+    nm.textContent = name;
+    const meta = document.createElement('div');
+    meta.className = 'series-meta';
+    meta.textContent = `${arr.length}冊 ・ 読了 ${read}/${arr.length} ・ ` +
+      (next ? `つづきは #${next.episode == null ? '?' : next.episode}` : '完読');
+    mainEl.append(nm, meta);
+    const chev = document.createElement('span');
+    chev.className = 'series-chev';
+    chev.textContent = '›';
+    row.append(icon, mainEl, chev);
+    row.addEventListener('click', () => { openSeriesName = name; renderShelf(); });
+    list.appendChild(row);
+  });
+}
+
+// カードの本文部分（タイトル・読了%・進捗バー・タグ行）。通常／選択モード／シリーズ内で共用
+function buildBookMain(rec, withTags) {
+  const main = document.createElement('button');
+  main.className = 'book-main';
+
+  const title = document.createElement('div');
+  title.className = 'book-title';
+  title.textContent = rec.title;
+
+  const meta = document.createElement('div');
+  meta.className = 'book-meta';
+  const pct = Math.round(bookProgress(rec) * 100);
+  meta.textContent = `${pct}%読了`;
+
+  const bar = document.createElement('div');
+  bar.className = 'book-progress';
+  const fill = document.createElement('div');
+  fill.className = 'book-progress-fill';
+  fill.style.width = pct + '%';
+  bar.appendChild(fill);
+
+  // タグ行＝読了%の下（タグが無い本は行ごと出さない）
+  const tags = withTags ? recTags(rec) : [];
+  if (tags.length) {
+    const tagsRow = document.createElement('div');
+    tagsRow.className = 'book-tags';
+    tags.forEach(tg => {
+      const chip = document.createElement('span');
+      chip.className = 'book-tag';
+      chip.textContent = tg;
+      tagsRow.appendChild(chip);
+    });
+    main.append(title, meta, tagsRow, bar);
+  } else {
+    main.append(title, meta, bar);
+  }
+  return main;
+}
+
 async function renderShelf(animate) {
   const list = document.getElementById('shelf-list');
   const emptyMsg = document.getElementById('shelf-empty');
@@ -817,6 +1251,13 @@ async function renderShelf(animate) {
 
   renderTagChips();
   const shown = currentTag ? books.filter(b => recTags(b).includes(currentTag)) : books;
+
+  // モード別の出し分け：
+  // - シリーズビュー中はタグ絞り込みと並び替えを隠す（シリーズの追加は一覧見出しの＋から）
+  // - 選択モード中はツール行ごと隠す（選択中は全冊のフラット表示）
+  document.getElementById('tag-chips').classList.toggle('hidden', seriesView && !selectMode);
+  document.getElementById('sort-row').classList.toggle('hidden', selectMode);
+  document.getElementById('sort-btn').classList.toggle('hidden', seriesView);
 
   // 並び替え切替をFLIPで滑らかに（切替前の位置を覚えておく）
   const firstTop = {};
@@ -854,8 +1295,42 @@ async function renderShelf(animate) {
     resume.onclick = () => openRecord(lastRec);
   }
 
-  const rendered = shown.slice(0, shelfLimit);
+  // シリーズビュー：カードの代わりにシリーズ一覧／中身を描く（選択モード中は全冊フラット表示を優先）
+  if (seriesView && !selectMode) {
+    emptyMsg.classList.add('hidden');
+    resume.classList.add('hidden');
+    renderSeriesView(list, books);
+    return;
+  }
+  if (selectMode) resume.classList.add('hidden');
+
+  // 選択モードの目的別に選べる本を絞る（追加＝対象シリーズ外の本、はずす＝対象シリーズの本だけ）
+  let pool = shown;
+  if (selectMode && selectPurpose === 'add') pool = shown.filter(b => b.series !== selectTargetSeries);
+  if (selectMode && selectPurpose === 'remove') pool = shown.filter(b => b.series === selectTargetSeries);
+
+  const rendered = pool.slice(0, shelfLimit);
   rendered.forEach((rec, idx) => {
+    // 選択モード：●とカード本文だけ。カードのどこをタップしても選択トグル
+    if (selectMode) {
+      const card = document.createElement('div');
+      card.className = 'book-card' + (selSet.has(rec.id) ? ' sel' : '');
+      card.dataset.id = rec.id;
+      const dotWrap = document.createElement('div');
+      dotWrap.className = 'sel-dot-wrap';
+      const dot = document.createElement('span');
+      dot.className = 'sel-dot';
+      dotWrap.appendChild(dot);
+      card.append(dotWrap, buildBookMain(rec, true));
+      card.addEventListener('click', () => {
+        if (selSet.has(rec.id)) selSet.delete(rec.id); else selSet.add(rec.id);
+        card.classList.toggle('sel', selSet.has(rec.id));
+        updateSelectUi();
+      });
+      list.appendChild(card);
+      return;
+    }
+
     const card = document.createElement('div');
     card.className = 'book-card';
     card.dataset.id = rec.id;
@@ -870,40 +1345,7 @@ async function renderShelf(animate) {
     handle.setAttribute('aria-label', 'ドラッグで並べ替え');
     attachDragHandle(handle, card, idx, rendered, books);
 
-    const main = document.createElement('button');
-    main.className = 'book-main';
-
-    const title = document.createElement('div');
-    title.className = 'book-title';
-    title.textContent = rec.title;
-
-    const meta = document.createElement('div');
-    meta.className = 'book-meta';
-    const pct = Math.round(bookProgress(rec) * 100);
-    meta.textContent = `${pct}%読了`;
-
-    const bar = document.createElement('div');
-    bar.className = 'book-progress';
-    const fill = document.createElement('div');
-    fill.className = 'book-progress-fill';
-    fill.style.width = pct + '%';
-    bar.appendChild(fill);
-
-    // タグ行＝読了%の下（タグが無い本は行ごと出さない）
-    const tags = recTags(rec);
-    if (tags.length) {
-      const tagsRow = document.createElement('div');
-      tagsRow.className = 'book-tags';
-      tags.forEach(tg => {
-        const chip = document.createElement('span');
-        chip.className = 'book-tag';
-        chip.textContent = tg;
-        tagsRow.appendChild(chip);
-      });
-      main.append(title, meta, tagsRow, bar);
-    } else {
-      main.append(title, meta, bar);
-    }
+    const main = buildBookMain(rec, true);
     main.addEventListener('click', () => { if (swipeGuard()) return; openRecord(rec); });
 
     const menu = document.createElement('button');
@@ -936,10 +1378,10 @@ async function renderShelf(animate) {
   });
 
   // 30冊ずつの追加表示
-  if (shown.length > shelfLimit) {
+  if (pool.length > shelfLimit) {
     const more = document.createElement('button');
     more.id = 'btn-more-books';
-    more.textContent = `もっと見る（残り${shown.length - shelfLimit}冊）`;
+    more.textContent = `もっと見る（残り${pool.length - shelfLimit}冊）`;
     more.addEventListener('click', () => { shelfLimit += SHELF_PAGE; renderShelf(); });
     list.appendChild(more);
   }
@@ -1062,7 +1504,7 @@ window.addEventListener('resize', updateHeaderHeight);
     if (Date.now() - t0 > 350) return;                              // 長押しはマーカー操作
     if (Math.hypot(e.clientX - x0, e.clientY - y0) > 10) return;    // 指が動いた＝スクロール
     if (wrap.scrollTop !== sT || wrap.scrollLeft !== sL) return;    // 慣性スクロールの停止タップ
-    if (e.target.closest('#press-menu')) return;                    // メニュー操作
+    if (e.target.closest('#press-menu, .episode-link')) return;     // メニュー・前後の話カードの操作
     if (pressBlockEl) return;                                       // メニュー表示中＝このタップは閉じる係
     document.body.classList.toggle('ui-hidden');
   });
@@ -1207,8 +1649,11 @@ const SHELF_ICON =
   '<path d="M5 3v15M10 3v15M14.5 4.5L19 18"/><path d="M3 21h18"/></svg>';
 
 document.getElementById('btn-left').addEventListener('click', () => {
-  if (document.getElementById('btn-left').dataset.mode === 'shelf') {
+  const mode = document.getElementById('btn-left').dataset.mode;
+  if (mode === 'shelf') {
     showShelf();
+  } else if (mode === 'cancel-select') {
+    exitSelectMode();
   } else {
     document.getElementById('file-input').click();
   }

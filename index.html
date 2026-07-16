@@ -33,6 +33,12 @@
     <div id="shelf">
       <div id="tag-chips"></div>
       <div id="sort-row">
+        <button id="series-btn" aria-label="シリーズ一覧">
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+            <rect x="3" y="3" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="3" width="5.5" height="5.5" rx="1"/>
+            <rect x="3" y="11.5" width="5.5" height="5.5" rx="1"/><rect x="11.5" y="11.5" width="5.5" height="5.5" rx="1"/>
+          </svg>
+        </button>
         <button id="sort-btn" aria-label="並び替え">
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none"
                stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
@@ -171,9 +177,51 @@
       <label class="edit-field">著者
         <input type="text" id="edit-author" placeholder="著者名（任意）">
       </label>
+      <label class="edit-field">シリーズ名
+        <input type="text" id="edit-series" placeholder="シリーズ名（任意）">
+      </label>
+      <label class="edit-field">話数
+        <input type="text" id="edit-episode" inputmode="numeric" placeholder="シリーズ内の順番（数字）">
+      </label>
       <p class="edit-hint">入力欄の外をタップした時点で保存されます。タイトルを空にした場合は変更されません</p>
     </div>
     <button id="btn-tag-close">閉じる</button>
+  </div>
+</div>
+
+<!-- 選択モードの下部バー -->
+<div id="select-actbar" class="hidden">
+  <button id="btn-make-series" disabled>シリーズにまとめる</button>
+</div>
+
+<!-- シリーズにまとめるシート -->
+<div id="series-panel" class="hidden">
+  <div id="series-inner">
+    <strong>シリーズにまとめる</strong>
+    <label class="edit-field">シリーズ名（タップで編集できます）
+      <input type="text" id="series-name" placeholder="シリーズ名を入力">
+    </label>
+    <div>
+      <div class="panel-label">読む順（タイトルの数字から自動判定）</div>
+      <div id="series-order"></div>
+      <p class="edit-hint">順番がズレていたら、あとで各本の「情報」タブの話数で直せます</p>
+    </div>
+    <div class="series-actions">
+      <button id="btn-series-cancel">やめる</button>
+      <button id="btn-series-ok">まとめる</button>
+    </div>
+  </div>
+</div>
+
+<!-- シリーズ編集シート（シリーズ内画面の ⋯ から） -->
+<div id="series-edit-panel" class="hidden">
+  <div id="series-edit-inner">
+    <strong id="series-edit-title"></strong>
+    <button class="series-edit-item" id="se-rename">シリーズ名を変更…</button>
+    <button class="series-edit-item" id="se-add">本を追加…</button>
+    <button class="series-edit-item" id="se-remove">本をはずす…</button>
+    <button class="series-edit-item danger" id="se-dissolve">シリーズを解散（本は消えません）</button>
+    <button id="btn-series-edit-close">閉じる</button>
   </div>
 </div>
 
