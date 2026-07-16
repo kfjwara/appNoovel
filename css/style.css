@@ -182,6 +182,46 @@ body[data-theme="sf"] #reader { text-shadow: 0 0 10px rgba(90, 220, 240, .12); }
   -webkit-overflow-scrolling: touch;
 }
 
+/* ===== 全画面読書（イマーシブモード） =====
+   読書中(body.reading)はヘッダー・進捗バー・章ナビをオーバーレイ化して本文を全画面に。
+   画面タップで body.ui-hidden をトグルして出し入れする（app.js）。進捗バーだけ常時表示 */
+body.reading #header {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 60;
+  padding-top: calc(12px + env(safe-area-inset-top, 0px));
+  transition: transform .25s ease;
+}
+body.reading #progress {
+  position: fixed;
+  top: env(safe-area-inset-top, 0px);   /* UI退場中はノッチ・ステータスバーの下に線だけ残る */
+  left: 0; right: 0;
+  z-index: 70;
+  transition: top .25s ease;   /* ヘッダーの出入りと同じ速度で追従 */
+}
+/* UI表示中はヘッダーの真下に付く（--header-h は app.js が実測でセット） */
+body.reading:not(.ui-hidden) #progress { top: var(--header-h, 52px); }
+@media (prefers-reduced-motion: reduce) {
+  body.reading #progress { transition: none; }
+}
+body.reading #chapter-nav {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 60;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  transition: transform .25s ease;
+}
+body.reading.ui-hidden #header { transform: translateY(-100%); }
+body.reading.ui-hidden #chapter-nav { transform: translateY(100%); }
+@media (prefers-reduced-motion: reduce) {
+  body.reading #header, body.reading #chapter-nav { transition: none; }
+}
+/* 本文はノッチ・ホームバーを避けつつ全画面へ */
+body.reading #reader-wrap {
+  padding-top: calc(28px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+}
+
 #reader {
   max-width: 680px;
   margin: 0 auto;

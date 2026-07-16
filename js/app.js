@@ -356,11 +356,13 @@ function openBook(record) {
   document.getElementById('shelf').classList.add('hidden');
   document.getElementById('reader').classList.remove('hidden');
   document.getElementById('chapter-nav').classList.remove('hidden');
+  document.body.classList.add('reading', 'ui-hidden');   // 開いたら即・全画面（タップでUI呼び出し）
   const left = document.getElementById('btn-left');
   left.innerHTML = SHELF_ICON;
   left.dataset.mode = 'shelf';
   left.setAttribute('aria-label', '本棚へ戻る');
   document.getElementById('header-title').textContent = book.title;
+  updateHeaderHeight();   // タイトル反映後のヘッダー実高で、進捗バーの位置を決める
 
   buildToc();
 
@@ -963,6 +965,7 @@ function showShelf() {
   currentFile = null;
   currentRecord = null;
   applyStyle();  // 本棚は常に横書きに戻す
+  document.body.classList.remove('reading', 'ui-hidden');
   document.getElementById('reader').classList.add('hidden');
   document.getElementById('chapter-nav').classList.add('hidden');
   document.getElementById('shelf').classList.remove('hidden');
@@ -1031,6 +1034,37 @@ function showPressMenu(el) {
   menu.style.top = Math.max(top, wrap.scrollTop + 6) + 'px';
   menu.style.left = left + 'px';
 }
+
+// ===== 全画面読書：画面タップでヘッダー・章ナビを出し入れ =====
+// 進捗バーを「ヘッダーの真下」に固定するため、ヘッダーの実高を CSS 変数に流す
+function updateHeaderHeight() {
+  document.documentElement.style.setProperty('--header-h',
+    document.getElementById('header').offsetHeight + 'px');
+}
+window.addEventListener('resize', updateHeaderHeight);
+
+// 「タップ」＝指がほぼ動かず・短時間で・スクロールも起きずに離れたときだけ。
+// スクロール／長押し（マーカー）／長押しメニュー表示中のタップ（＝閉じる操作）ではトグルしない。
+(() => {
+  const wrap = document.getElementById('reader-wrap');
+  let pid = null, t0 = 0, x0 = 0, y0 = 0, sT = 0, sL = 0;
+  wrap.addEventListener('pointerdown', e => {
+    pid = e.pointerId; t0 = Date.now();
+    x0 = e.clientX; y0 = e.clientY;
+    sT = wrap.scrollTop; sL = wrap.scrollLeft;
+  });
+  wrap.addEventListener('pointerup', e => {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    if (!document.body.classList.contains('reading')) return;
+    if (Date.now() - t0 > 350) return;                              // 長押しはマーカー操作
+    if (Math.hypot(e.clientX - x0, e.clientY - y0) > 10) return;    // 指が動いた＝スクロール
+    if (wrap.scrollTop !== sT || wrap.scrollLeft !== sL) return;    // 慣性スクロールの停止タップ
+    if (e.target.closest('#press-menu')) return;                    // メニュー操作
+    if (pressBlockEl) return;                                       // メニュー表示中＝このタップは閉じる係
+    document.body.classList.toggle('ui-hidden');
+  });
+})();
 
 const readerEl = document.getElementById('reader');
 readerEl.addEventListener('touchstart', e => {
