@@ -796,13 +796,81 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 /* ===== 章ナビ ===== */
 #chapter-nav {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
+  flex-direction: column;   /* 上段＝シークバー、下段＝章ナビ */
+  gap: 6px;
+  padding: 10px 16px 8px;
   background: var(--ui-bg);
   color: var(--ui-text);
   flex-shrink: 0;
+  position: relative;   /* シークプレビューのアンカー */
 }
+#ch-nav-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ===== シークバー（本全体の読書位置） ===== */
+#seek-row { display: flex; align-items: center; gap: 10px; }
+#seek-pct {
+  font-size: 11px;
+  opacity: .7;
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#seek-bar {
+  flex: 1;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: none;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;   /* テーマの文字色で塗る（currentColor） */
+}
+/* 読んだ分（左側）を塗る。--fill はJSが現在値から更新する */
+#seek-bar::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right,
+    currentColor var(--fill, 0%),
+    var(--ui-line) var(--fill, 0%));
+}
+#seek-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-top: -7px;
+  box-shadow: 0 1px 4px rgba(0,0,0,.3);
+}
+#seek-bar::-moz-range-track { height: 4px; border-radius: 2px; background: var(--ui-line); }
+#seek-bar::-moz-range-progress { height: 4px; border-radius: 2px; background: currentColor; }
+#seek-bar::-moz-range-thumb { width: 18px; height: 18px; border: none; border-radius: 50%; background: currentColor; }
+
+/* ドラッグ中のプレビュー（章ナビの上にフワッと出る） */
+#seek-preview {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20,20,20,.88);
+  color: #fff;
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 12px;
+  text-align: center;
+  line-height: 1.6;
+  white-space: nowrap;
+  pointer-events: none;
+  max-width: 86vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#seek-preview-ch { font-weight: 700; font-size: 13px; }
+#seek-preview-pct { opacity: .75; font-size: 11px; }
 
 #btn-prev-ch, #btn-next-ch {
   background: none;

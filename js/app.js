@@ -240,6 +240,7 @@ function restoreScroll(ratio) {
 let scrollTimer;
 document.getElementById('reader-wrap').addEventListener('scroll', () => {
   document.getElementById('progress-bar').style.width = (getScrollRatio() * 100) + '%';
+  updateSeekBar();
   hidePressMenu();
   clearTimeout(scrollTimer);
   scrollTimer = setTimeout(saveBookmark, 500);
@@ -325,6 +326,7 @@ function updateChapterNav() {
   document.getElementById('ch-counter').textContent = `${currentChapter + 1} / ${book.chapters.length}`;
   document.getElementById('btn-prev-ch').disabled = currentChapter === 0;
   document.getElementById('btn-next-ch').disabled = currentChapter === book.chapters.length - 1;
+  updateSeekBar();
 }
 
 function highlightToc() {
@@ -1321,6 +1323,55 @@ document.getElementById('btn-paste-import').addEventListener('click', () => {
 });
 
 // ===== Chapter navigation =====
+// ===== シークバー（本全体の読書位置） =====
+// 物差しは (章番号 + 章内スクロール割合) ÷ 章数。上の進捗バーやカードの読了%と同じ換算。
+// ドラッグ中はプレビュー（飛び先の章タイトル＋全体%）だけ出して、指を離した瞬間にジャンプする。
+let seeking = false;   // ドラッグ中はスクロール由来の値の巻き戻しを止める
+
+function updateSeekBar() {
+  if (!book || seeking) return;
+  const v = (currentChapter + getScrollRatio()) / book.chapters.length;
+  const seek = document.getElementById('seek-bar');
+  seek.value = Math.round(v * 1000);
+  document.getElementById('seek-pct').textContent = Math.round(v * 100) + '%';
+  seek.style.setProperty('--fill', (v * 100) + '%');
+}
+
+// スライダー値 → 飛び先（章番号と章内割合）
+function seekTarget() {
+  const v = document.getElementById('seek-bar').value / 1000;
+  const n = book.chapters.length;
+  const ch = Math.max(0, Math.min(n - 1, Math.floor(v * n)));
+  return { ch, ratio: Math.max(0, Math.min(1, v * n - ch)), v };
+}
+
+(() => {
+  const seek = document.getElementById('seek-bar');
+  const preview = document.getElementById('seek-preview');
+  seek.addEventListener('input', () => {
+    if (!book) return;
+    seeking = true;
+    const t = seekTarget();
+    document.getElementById('seek-preview-ch').textContent =
+      book.chapters[t.ch].title || `${t.ch + 1} / ${book.chapters.length}`;
+    document.getElementById('seek-preview-pct').textContent = '全体 ' + Math.round(t.v * 100) + '%';
+    document.getElementById('seek-pct').textContent = Math.round(t.v * 100) + '%';
+    seek.style.setProperty('--fill', (t.v * 100) + '%');
+    preview.classList.remove('hidden');
+  });
+  const commit = () => {
+    if (!seeking || !book) return;
+    seeking = false;
+    preview.classList.add('hidden');
+    const t = seekTarget();
+    if (t.ch === currentChapter) setScrollRatio(t.ratio);
+    else renderChapter(t.ch, { ratio: t.ratio });
+    saveBookmark();
+  };
+  seek.addEventListener('change', commit);    // 通常のドラッグ終了・トラックのタップ
+  seek.addEventListener('pointerup', commit); // iOSで change が落ちるケースの保険
+})();
+
 document.getElementById('btn-prev-ch').addEventListener('click', () => {
   if (currentChapter > 0) renderChapter(currentChapter - 1);
 });

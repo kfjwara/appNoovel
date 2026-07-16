@@ -58,12 +58,22 @@
   </div>
 
   <div id="chapter-nav" class="hidden">
-    <button id="btn-prev-ch" disabled>‹</button>
-    <button id="chapter-nav-info" aria-label="目次を開く">
-      <div id="ch-title-nav"></div>
-      <div id="ch-counter"></div>
-    </button>
-    <button id="btn-next-ch" disabled>›</button>
+    <div id="seek-preview" class="hidden">
+      <div id="seek-preview-ch"></div>
+      <div id="seek-preview-pct"></div>
+    </div>
+    <div id="seek-row">
+      <input type="range" id="seek-bar" min="0" max="1000" value="0" aria-label="読書位置（本全体）">
+      <span id="seek-pct">0%</span>
+    </div>
+    <div id="ch-nav-row">
+      <button id="btn-prev-ch" disabled>‹</button>
+      <button id="chapter-nav-info" aria-label="目次を開く">
+        <div id="ch-title-nav"></div>
+        <div id="ch-counter"></div>
+      </button>
+      <button id="btn-next-ch" disabled>›</button>
+    </div>
   </div>
 
 </div>
