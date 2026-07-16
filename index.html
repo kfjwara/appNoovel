@@ -145,11 +145,24 @@
   </div>
 </div>
 
-<!-- タグ編集シート -->
+<!-- 本の編集シート（タグ｜情報） -->
 <div id="tag-panel" class="hidden">
   <div id="tag-inner">
-    <strong>タグを編集</strong>
+    <strong>本の編集</strong>
+    <div id="edit-tabs">
+      <button class="edit-tab active" data-tab="tags">タグ</button>
+      <button class="edit-tab" data-tab="info">情報</button>
+    </div>
     <div id="tag-list"></div>
+    <div id="edit-info" class="hidden">
+      <label class="edit-field">タイトル
+        <input type="text" id="edit-title">
+      </label>
+      <label class="edit-field">著者
+        <input type="text" id="edit-author" placeholder="著者名（任意）">
+      </label>
+      <p class="edit-hint">入力欄の外をタップした時点で保存されます。タイトルを空にした場合は変更されません</p>
+    </div>
     <button id="btn-tag-close">閉じる</button>
   </div>
 </div>

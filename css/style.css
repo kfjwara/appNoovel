@@ -80,7 +80,6 @@ body[data-theme="night"] .book-card {
 }
 body[data-theme="night"] .book-progress { background: rgba(160, 190, 255, .16); }
 body[data-theme="night"] .book-progress-fill { background: #8fa8e8; }
-body[data-theme="night"] .book-delete,
 body[data-theme="night"] .book-menu { border-left-color: rgba(160, 190, 255, .18); }
 body[data-theme="night"] #resume-bar {
   background: rgba(12, 18, 46, .94);
@@ -97,7 +96,6 @@ body[data-theme="sf"] .book-card {
 }
 body[data-theme="sf"] .book-progress { background: rgba(63, 217, 236, .15); }
 body[data-theme="sf"] .book-progress-fill { background: #3fd9ec; }
-body[data-theme="sf"] .book-delete,
 body[data-theme="sf"] .book-menu { border-left-color: rgba(63, 217, 236, .3); }
 body[data-theme="sf"] #resume-bar {
   background: rgba(4, 12, 18, .94);
@@ -431,14 +429,30 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 }
 .book-progress-fill { height: 100%; background: #888; }
 
+/* カード内側のスライド面。左スワイプで削除ボタンが出る（iOSミュージック風） */
+.book-slide {
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  position: relative;
+  touch-action: pan-y;   /* 縦スクロールはブラウザに任せ、横だけJSで拾う */
+}
+.book-slide.snap { transition: transform .22s ease; }
+@media (prefers-reduced-motion: reduce) {
+  .book-slide.snap { transition: none; }
+}
+
+/* 削除ボタン。カードの右外に隠れていて、スライド面ごと左に動くと現れる */
 .book-delete {
-  background: none;
+  position: absolute;
+  left: 100%;
+  top: 0;
+  bottom: 0;
+  width: 76px;
   border: none;
-  border-left: 1px solid var(--ui-line);
-  padding: 0 16px;
-  color: inherit;
-  opacity: .45;
-  font-size: 14px;
+  background: #1c1c1e;
+  color: #fff;
+  font-size: 16px;
   cursor: pointer;
 }
 
@@ -605,6 +619,55 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   max-height: 40vh;
   overflow-y: auto;
 }
+/* 本の編集シートのタブ（目次パネルのタブと同じ作法） */
+#edit-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--ui-line);
+}
+.edit-tab {
+  background: none;
+  border: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: inherit;
+  opacity: .5;
+  cursor: pointer;
+}
+.edit-tab.active {
+  opacity: 1;
+  font-weight: bold;
+  border-bottom: 2px solid currentColor;
+  margin-bottom: -1px;
+}
+
+/* 情報タブ（タイトル・著者） */
+#edit-info {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.edit-field input {
+  font-size: 16px;   /* 16px未満だとiOSがフォーカス時に画面ごと拡大するので16px厳守 */
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: 10px;
+  background: var(--ui-input-bg);
+  color: inherit;
+  font-family: inherit;
+  width: 100%;
+}
+.edit-hint {
+  font-size: 11px;
+  opacity: .5;
+  line-height: 1.7;
+}
+
 .tag-pick-item {
   padding: 12px;
   border-radius: 10px;

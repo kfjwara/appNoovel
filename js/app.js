@@ -496,7 +496,47 @@ function renderTagChips() {
 }
 
 // タグ編集シート（カードの ⋯ から開く）。タップでON/OFF、複数付けられる
+let editingRec = null;   // 「本の編集」シートで開いている本
+
+// 情報タブ：タイトル・著者の保存（入力確定＝changeと、シートを閉じる時の両方から呼ばれる）
+async function saveBookInfo() {
+  const rec = editingRec;
+  if (!rec) return;
+  const title = document.getElementById('edit-title').value.trim();
+  const author = document.getElementById('edit-author').value.trim();
+  let dirty = false;
+  if (title && title !== rec.title) {   // 空タイトルは無視（事故防止）
+    rec.title = title;
+    if (rec.noovel) rec.noovel.title = title;   // リーダー側の表示とズレないよう両方更新
+    dirty = true;
+  }
+  if (author !== (rec.author || '')) {
+    rec.author = author;
+    if (rec.noovel) rec.noovel.author = author;
+    dirty = true;
+  }
+  if (dirty) await dbPut(rec).catch(err => console.error('info save failed', err));
+}
+document.getElementById('edit-title').addEventListener('change', saveBookInfo);
+document.getElementById('edit-author').addEventListener('change', saveBookInfo);
+
+function setEditTab(tab) {
+  document.querySelectorAll('#edit-tabs .edit-tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('tag-list').classList.toggle('hidden', tab !== 'tags');
+  document.getElementById('edit-info').classList.toggle('hidden', tab !== 'info');
+}
+document.querySelectorAll('#edit-tabs .edit-tab').forEach(b =>
+  b.addEventListener('click', () => setEditTab(b.dataset.tab)));
+
 function openTagEditor(rec) {
+  const isReopen = editingRec === rec;   // タグ付け外しによる再描画では入力値・タブを触らない
+  editingRec = rec;
+  if (!isReopen) {
+    document.getElementById('edit-title').value = rec.title || '';
+    document.getElementById('edit-author').value = rec.author || '';
+    setEditTab('tags');   // 開いたときはタグタブから
+  }
   const list = document.getElementById('tag-list');
   list.innerHTML = '';
 
@@ -533,6 +573,8 @@ function openTagEditor(rec) {
 }
 
 function closeTagPanel() {
+  saveBookInfo();   // 変更イベントを取りこぼしても閉じる時に必ず保存（rec は関数内で捕まえるので下の null 化と競合しない）
+  editingRec = null;
   document.getElementById('tag-panel').classList.add('hidden');
   renderShelf();
 }
@@ -678,6 +720,72 @@ function attachDragHandle(handle, card, index, rendered, allBooks) {
   });
 }
 
+// ===== スワイプ削除（カードを左にスライドすると削除ボタンが出る。iOSミュージック風） =====
+const SWIPE_DEL_W = 76;   // 削除ボタンの幅＝スライド量
+let openSwipe = null;     // 開いているカード { card, slider }（同時に開くのは1枚だけ）
+let lastSwipeAt = 0;      // スワイプ直後の click 誤発火よけ
+
+function closeSwipe() {
+  if (!openSwipe) return;
+  openSwipe.slider.classList.add('snap');
+  openSwipe.slider.style.transform = '';
+  openSwipe = null;
+}
+
+// スワイプ直後・開いた状態でのタップは「本を開く」等の操作を止める（開いていたら閉じるだけ）
+function swipeGuard() {
+  if (Date.now() - lastSwipeAt < 400) return true;
+  if (openSwipe) { closeSwipe(); return true; }
+  return false;
+}
+
+// 開いたままカードの外を触ったら閉じる（その1タップは閉じる動作に使い、本は開かない）
+document.addEventListener('pointerdown', e => {
+  if (openSwipe && !openSwipe.card.contains(e.target)) {
+    closeSwipe();
+    lastSwipeAt = Date.now();
+  }
+});
+
+function attachSwipeDelete(card, slider) {
+  let startX = 0, startY = 0, base = 0, pid = null, mode = null; // 'pending' → 'swipe'
+  slider.addEventListener('pointerdown', e => {
+    // ハンドル・ボタン類から始まった操作はスワイプにしない
+    if (e.target.closest('.drag-handle, .book-menu, .book-delete')) return;
+    startX = e.clientX; startY = e.clientY;
+    base = (openSwipe && openSwipe.card === card) ? -SWIPE_DEL_W : 0;
+    pid = e.pointerId; mode = 'pending';
+  });
+  slider.addEventListener('pointermove', e => {
+    if (!mode || e.pointerId !== pid) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (mode === 'pending') {
+      // 縦優勢なら縦スクロールに譲る（touch-action: pan-y とセット）
+      if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { mode = null; return; }
+      if (Math.abs(dx) < 8) return;
+      mode = 'swipe';
+      slider.setPointerCapture(pid);
+      slider.classList.remove('snap');
+      if (openSwipe && openSwipe.card !== card) closeSwipe();
+    }
+    const x = Math.max(-SWIPE_DEL_W, Math.min(0, base + dx));
+    slider.style.transform = x ? `translateX(${x}px)` : '';
+  });
+  const finish = e => {
+    if (e.pointerId !== pid) return;
+    if (mode === 'swipe') {
+      const open = base + (e.clientX - startX) < -SWIPE_DEL_W / 2;
+      slider.classList.add('snap');
+      slider.style.transform = open ? `translateX(${-SWIPE_DEL_W}px)` : '';
+      openSwipe = open ? { card, slider } : null;
+      lastSwipeAt = Date.now();
+    }
+    mode = null; pid = null;
+  };
+  slider.addEventListener('pointerup', finish);
+  slider.addEventListener('pointercancel', finish);
+}
+
 // ===== Bookshelf =====
 function formatDate(ts) {
   if (!ts) return '';
@@ -715,6 +823,7 @@ async function renderShelf(animate) {
   }
 
   list.innerHTML = '';
+  openSwipe = null;   // カードを作り直すので開いていたスワイプの参照を捨てる
   emptyMsg.classList.toggle('hidden', shown.length > 0);
   if (emptyMsg.children[1]) {
     emptyMsg.children[1].innerHTML = books.length
@@ -746,6 +855,10 @@ async function renderShelf(animate) {
     const card = document.createElement('div');
     card.className = 'book-card';
     card.dataset.id = rec.id;
+
+    // スライド面。左スワイプで translateX して、右外に隠した削除ボタンが現れる
+    const slider = document.createElement('div');
+    slider.className = 'book-slide';
 
     const handle = document.createElement('button');
     handle.className = 'drag-handle';
@@ -787,20 +900,22 @@ async function renderShelf(animate) {
     } else {
       main.append(title, meta, bar);
     }
-    main.addEventListener('click', () => openRecord(rec));
+    main.addEventListener('click', () => { if (swipeGuard()) return; openRecord(rec); });
 
     const menu = document.createElement('button');
     menu.className = 'book-menu';
     menu.textContent = '⋯';
-    menu.setAttribute('aria-label', 'タグを編集');
+    menu.setAttribute('aria-label', '本を編集');
     menu.addEventListener('click', e => {
       e.stopPropagation();
+      if (swipeGuard()) return;
       openTagEditor(rec);
     });
 
     const del = document.createElement('button');
     del.className = 'book-delete';
     del.textContent = '✕';
+    del.setAttribute('aria-label', '削除');
     del.addEventListener('click', async e => {
       e.stopPropagation();
       if (!confirm(`「${rec.title}」を本棚から削除しますか？`)) return;
@@ -810,7 +925,9 @@ async function renderShelf(animate) {
       renderShelf();
     });
 
-    card.append(handle, main, menu, del);
+    slider.append(handle, main, menu, del);
+    card.appendChild(slider);
+    attachSwipeDelete(card, slider);
     list.appendChild(card);
   });
 
