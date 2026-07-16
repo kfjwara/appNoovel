@@ -199,6 +199,9 @@ function novelPageToBook(doc, container) {
   let title = qText('h1.work-title');
   // タブ題は空白正規化のみ。話数プレフィックス（#1等）やサイト名は情報として残す
   if (!title) title = clean(doc.title || '');
+  // 話数（#N）はタブ題にしか無いことが多い。h1由来のタイトルに無ければタブ題から補う
+  const ep = (doc.title || '').match(/^#(\d+)\s*/);
+  if (ep && title && !/^#\d+/.test(title)) title = '#' + ep[1] + ' ' + title;
   const subtitle = qText('.series-badge');
 
   let author = qText('a[href^="/users/"] .value');

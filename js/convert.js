@@ -32,11 +32,12 @@ function matchHeadingStyle(t) {
 }
 
 // インライン掃除：markdown強調の除去
+// 見出し記号#はmd記法通り「直後に空白があるとき」だけ剥がす（#1等の話数表記は残す）
 function cleanInline(t) {
   return t
     .replace(/\*\*(.+?)\*\*/g, '$1')
     .replace(/\*(.+?)\*/g, '$1')
-    .replace(/^#{1,6}\s*/, '');
+    .replace(/^#{1,6}\s+/, '');
 }
 
 function lastNonBlankIndex(lines) {

@@ -41,6 +41,11 @@
     eq(book.chapters.length, 1);
   });
 
+  t('話数表記（#1等・#の直後に空白なし）はタイトルから削らない', () => {
+    const { book } = convertText('#1 タイトル名\n\n第一章　A\n本文。', 'stem');
+    eq(book.title, '#1 タイトル名');
+  });
+
   t('mdの#一つはタイトル、##が章になる', () => {
     const { book } = convertText('# タイトル\n\n## 章A\n本文a\n\n## 章B\n本文b', 'stem');
     eq(book.title, 'タイトル');
