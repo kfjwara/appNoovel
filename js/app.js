@@ -371,129 +371,173 @@ function openBook(record) {
   dbPut(record).catch(() => {});
 }
 
-// ===== フォルダ =====
-// 本のレコードに folder（文字列）を持たせる。'' は未分類＝「すべて」にだけ出る。
-// フォルダ一覧は localStorage に明示的に持つ（空フォルダや並び順を保てるように）
+// ===== タグ =====
+// 本のレコードに tags（文字列の配列）を持たせる。複数設定できる。
+// タグ一覧は localStorage に明示的に持つ（空タグや並び順を保てるように）
 const SHELF_PAGE = 30;
-let currentFolder = localStorage.getItem('noovel_shelf_folder') || '';
+const UNTAGGED = '__untagged__';   // 絞り込みチップ「タグなし」の内部値（タグ名としては使わせない）
+let currentTag = localStorage.getItem('noovel_shelf_tag') || '';
 let shelfLimit = SHELF_PAGE;
 
-function getFolders() {
-  try { return JSON.parse(localStorage.getItem('noovel_folders') || '[]'); }
+function getTags() {
+  try { return JSON.parse(localStorage.getItem('noovel_tags') || '[]'); }
   catch (e) { return []; }
 }
-function saveFolders(list) { localStorage.setItem('noovel_folders', JSON.stringify(list)); }
+function saveTags(list) { localStorage.setItem('noovel_tags', JSON.stringify(list)); }
 
-function selectFolder(name) {
-  currentFolder = name;
-  localStorage.setItem('noovel_shelf_folder', name);
+// レコードのタグ（旧folder形式の本にも安全に効く読み口）
+function recTags(rec) {
+  if (Array.isArray(rec.tags)) return rec.tags;
+  return rec.folder ? [rec.folder] : [];
+}
+
+// 旧フォルダ形式からの一回きり移行（v29）。復元で旧バックアップが入った後にも呼ぶ
+async function migrateFoldersToTags() {
+  if (localStorage.getItem('noovel_tags') === null && localStorage.getItem('noovel_folders') !== null) {
+    localStorage.setItem('noovel_tags', localStorage.getItem('noovel_folders'));
+    const oldSel = localStorage.getItem('noovel_shelf_folder');
+    if (oldSel) { currentTag = oldSel; localStorage.setItem('noovel_shelf_tag', oldSel); }
+  }
+  localStorage.removeItem('noovel_folders');
+  localStorage.removeItem('noovel_shelf_folder');
+  let books = [];
+  try { books = await dbGetAll(); } catch (e) { return; }
+  for (const b of books) {
+    if (Array.isArray(b.tags)) continue;
+    b.tags = b.folder ? [b.folder] : [];
+    delete b.folder;
+    await dbPut(b).catch(() => {});
+  }
+}
+
+function selectTag(name) {
+  currentTag = name;
+  localStorage.setItem('noovel_shelf_tag', name);
   shelfLimit = SHELF_PAGE;
   renderShelf();
 }
 
-function createFolder() {
-  const name = (prompt('新しいフォルダ名') || '').trim();
-  if (!name) return;
-  const folders = getFolders();
-  if (folders.includes(name)) { alert('同じ名前のフォルダがあります'); return; }
-  folders.push(name);
-  saveFolders(folders);
-  selectFolder(name);
+function promptNewTag() {
+  const name = (prompt('新しいタグ名') || '').trim();
+  if (!name) return null;
+  if (name === UNTAGGED) { alert('その名前は使えません'); return null; }
+  const tags = getTags();
+  if (tags.includes(name)) { alert('同じ名前のタグがあります'); return null; }
+  tags.push(name);
+  saveTags(tags);
+  return name;
 }
 
-// フォルダ名の変更・削除（タブ長押し／右クリック）
-async function manageFolder(name) {
-  const input = prompt('フォルダ名を変更（空欄にすると削除。中の本は消えません）', name);
+function createTag() {
+  const name = promptNewTag();
+  if (name) selectTag(name);
+}
+
+// タグ名の変更・削除（チップ長押し／右クリック）
+async function manageTag(name) {
+  const input = prompt('タグ名を変更（空欄にすると削除。本は消えません）', name);
   if (input === null) return;
   const newName = input.trim();
   if (newName === name) return;
-  const folders = getFolders();
-  if (newName && folders.includes(newName)) { alert('同じ名前のフォルダがあります'); return; }
-  if (!newName && !confirm(`フォルダ「${name}」を削除しますか？（中の本は「すべて」に残ります）`)) return;
+  const tags = getTags();
+  if (newName && tags.includes(newName)) { alert('同じ名前のタグがあります'); return; }
+  if (!newName && !confirm(`タグ「${name}」を削除しますか？（付いていた本からタグが外れるだけです）`)) return;
 
   let books = [];
   try { books = await dbGetAll(); } catch (e) {}
   for (const b of books) {
-    if (b.folder === name) {
-      b.folder = newName;
-      await dbPut(b).catch(() => {});
-    }
+    const cur = recTags(b);
+    if (!cur.includes(name)) continue;
+    b.tags = cur.filter(t => t !== name);
+    if (newName && !b.tags.includes(newName)) b.tags.push(newName);
+    delete b.folder;
+    await dbPut(b).catch(() => {});
   }
-  const i = folders.indexOf(name);
-  if (newName) folders.splice(i, 1, newName);
-  else folders.splice(i, 1);
-  saveFolders(folders);
-  if (currentFolder === name) currentFolder = newName;
-  localStorage.setItem('noovel_shelf_folder', currentFolder);
+  const i = tags.indexOf(name);
+  if (newName) tags.splice(i, 1, newName);
+  else tags.splice(i, 1);
+  saveTags(tags);
+  if (currentTag === name) currentTag = newName;
+  localStorage.setItem('noovel_shelf_tag', currentTag);
   renderShelf();
 }
 
-function renderFolderTabs() {
-  const wrap = document.getElementById('folder-tabs');
+function renderTagChips() {
+  const wrap = document.getElementById('tag-chips');
   wrap.innerHTML = '';
-  const folders = getFolders();
-  if (currentFolder && !folders.includes(currentFolder)) currentFolder = '';
+  const tags = getTags();
+  if (currentTag && currentTag !== UNTAGGED && !tags.includes(currentTag)) currentTag = '';
 
-  const mk = (label, value) => {
+  const mk = (label, value, manageable) => {
     const b = document.createElement('button');
-    b.className = 'folder-tab' + (currentFolder === value ? ' active' : '');
+    b.className = 'tag-chip' + (currentTag === value ? ' active' : '');
     b.textContent = label;
-    b.addEventListener('click', () => selectFolder(value));
-    if (value) {
+    b.addEventListener('click', () => selectTag(value));
+    if (manageable) {
       let t = null;
-      b.addEventListener('touchstart', () => { t = setTimeout(() => manageFolder(value), 550); }, { passive: true });
+      b.addEventListener('touchstart', () => { t = setTimeout(() => manageTag(value), 550); }, { passive: true });
       b.addEventListener('touchend', () => clearTimeout(t));
       b.addEventListener('touchmove', () => clearTimeout(t), { passive: true });
-      b.addEventListener('contextmenu', e => { e.preventDefault(); manageFolder(value); });
+      b.addEventListener('contextmenu', e => { e.preventDefault(); manageTag(value); });
     }
     wrap.appendChild(b);
   };
-  mk('すべて', '');
-  folders.forEach(f => mk(f, f));
+  mk('すべて', '', false);
+  tags.forEach(t => mk(t, t, true));
+  mk('タグなし', UNTAGGED, false);
 
   const add = document.createElement('button');
-  add.className = 'folder-tab folder-add';
+  add.className = 'tag-chip tag-add';
   add.textContent = '＋';
-  add.setAttribute('aria-label', 'フォルダを作成');
-  add.addEventListener('click', createFolder);
+  add.setAttribute('aria-label', 'タグを作成');
+  add.addEventListener('click', createTag);
   wrap.appendChild(add);
 }
 
-// フォルダ移動パネル（カードの ⋯ から開く）
-function openFolderPicker(rec) {
-  const list = document.getElementById('folder-list');
+// タグ編集シート（カードの ⋯ から開く）。タップでON/OFF、複数付けられる
+function openTagEditor(rec) {
+  const list = document.getElementById('tag-list');
   list.innerHTML = '';
-  const mk = (label, value) => {
+
+  const mkToggle = name => {
+    const on = recTags(rec).includes(name);
     const b = document.createElement('button');
-    b.className = 'folder-pick-item' + ((rec.folder || '') === value ? ' active' : '');
-    b.textContent = label;
+    b.className = 'tag-pick-item' + (on ? ' active' : '');
+    b.textContent = (on ? '✓ ' : '') + name;
     b.addEventListener('click', async () => {
-      if (value === '__new__') {
-        const name = (prompt('新しいフォルダ名') || '').trim();
-        if (!name) return;
-        const folders = getFolders();
-        if (!folders.includes(name)) { folders.push(name); saveFolders(folders); }
-        rec.folder = name;
-      } else {
-        rec.folder = value;
-      }
-      await dbPut(rec).catch(err => console.error('folder save failed', err));
-      document.getElementById('folder-panel').classList.add('hidden');
-      renderShelf();
+      const cur = recTags(rec);
+      rec.tags = cur.includes(name) ? cur.filter(t => t !== name) : [...cur, name];
+      delete rec.folder;
+      await dbPut(rec).catch(err => console.error('tag save failed', err));
+      openTagEditor(rec); // シートは開いたまま表示を更新（複数付け外しできるように）
     });
     list.appendChild(b);
   };
-  mk('（フォルダなし）', '');
-  getFolders().forEach(f => mk(f, f));
-  mk('＋ 新しいフォルダ…', '__new__');
-  document.getElementById('folder-panel').classList.remove('hidden');
+  getTags().forEach(mkToggle);
+
+  const add = document.createElement('button');
+  add.className = 'tag-pick-item';
+  add.textContent = '＋ 新しいタグ…';
+  add.addEventListener('click', async () => {
+    const name = promptNewTag();
+    if (!name) return;
+    rec.tags = [...recTags(rec), name];
+    delete rec.folder;
+    await dbPut(rec).catch(err => console.error('tag save failed', err));
+    openTagEditor(rec);
+  });
+  list.appendChild(add);
+
+  document.getElementById('tag-panel').classList.remove('hidden');
 }
 
-document.getElementById('btn-folder-cancel').addEventListener('click', () => {
-  document.getElementById('folder-panel').classList.add('hidden');
-});
-document.getElementById('folder-panel').addEventListener('click', e => {
-  if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+function closeTagPanel() {
+  document.getElementById('tag-panel').classList.add('hidden');
+  renderShelf();
+}
+document.getElementById('btn-tag-close').addEventListener('click', closeTagPanel);
+document.getElementById('tag-panel').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeTagPanel();
 });
 
 // ===== Bookshelf =====
@@ -521,14 +565,16 @@ async function renderShelf() {
   }
   books.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
 
-  renderFolderTabs();
-  const shown = currentFolder ? books.filter(b => b.folder === currentFolder) : books;
+  renderTagChips();
+  const shown = currentTag === UNTAGGED ? books.filter(b => !recTags(b).length)
+    : currentTag ? books.filter(b => recTags(b).includes(currentTag))
+    : books;
 
   list.innerHTML = '';
   emptyMsg.classList.toggle('hidden', shown.length > 0);
   if (emptyMsg.children[1]) {
     emptyMsg.children[1].innerHTML = books.length
-      ? 'このフォルダには本がありません'
+      ? 'このタグの本はありません'
       : '「開く」からテキストファイルを<br>読み込んでください';
   }
 
@@ -565,7 +611,7 @@ async function renderShelf() {
     const meta = document.createElement('div');
     meta.className = 'book-meta';
     const pct = Math.round(bookProgress(rec) * 100);
-    meta.textContent = `${pct}%読了 ・ ${formatDate(rec.lastReadAt)}`;
+    meta.textContent = `${pct}%読了`;
 
     const bar = document.createElement('div');
     bar.className = 'book-progress';
@@ -574,16 +620,30 @@ async function renderShelf() {
     fill.style.width = pct + '%';
     bar.appendChild(fill);
 
-    main.append(title, meta, bar);
+    // タグ行（タグが無い本は行ごと出さない）
+    const tags = recTags(rec);
+    if (tags.length) {
+      const tagsRow = document.createElement('div');
+      tagsRow.className = 'book-tags';
+      tags.forEach(tg => {
+        const chip = document.createElement('span');
+        chip.className = 'book-tag';
+        chip.textContent = tg;
+        tagsRow.appendChild(chip);
+      });
+      main.append(title, tagsRow, meta, bar);
+    } else {
+      main.append(title, meta, bar);
+    }
     main.addEventListener('click', () => openRecord(rec));
 
     const menu = document.createElement('button');
     menu.className = 'book-menu';
     menu.textContent = '⋯';
-    menu.setAttribute('aria-label', 'フォルダへ移動');
+    menu.setAttribute('aria-label', 'タグを編集');
     menu.addEventListener('click', e => {
       e.stopPropagation();
-      openFolderPicker(rec);
+      openTagEditor(rec);
     });
 
     const del = document.createElement('button');
@@ -1084,7 +1144,7 @@ async function exportBackup() {
     exportedAt: Date.now(),
     cfg,
     last: localStorage.getItem('noovel_last') || '',
-    folders: getFolders(),
+    tags: getTags(),
     books,
     positions,
   };
@@ -1124,10 +1184,16 @@ async function importBackup(text) {
     }
   }
   if (data.last) localStorage.setItem('noovel_last', data.last);
-  if (Array.isArray(data.folders)) {
-    saveFolders([...new Set([...getFolders(), ...data.folders.filter(f => typeof f === 'string' && f)])]);
-  }
+  // タグ一覧をマージ（旧バックアップの folders もタグとして受ける）
+  const importedTags = [
+    ...(Array.isArray(data.tags) ? data.tags : []),
+    ...(Array.isArray(data.folders) ? data.folders : []),
+  ].filter(t => typeof t === 'string' && t);
+  if (importedTags.length) saveTags([...new Set([...getTags(), ...importedTags])]);
   if (data.cfg) { cfg = { ...DEFAULTS, ...data.cfg }; saveCfg(); applyStyle(); }
+
+  // 旧バックアップの本（folder持ち）をtagsへ変換
+  await migrateFoldersToTags();
 
   alert(ok === valid.length ? `${ok}冊を復元しました` : `${ok}冊を復元（${valid.length - ok}冊は失敗）`);
   document.getElementById('settings-panel').classList.add('hidden');
@@ -1162,4 +1228,4 @@ document.getElementById('app-version').textContent = 'Noovel v' + NOOVEL_VERSION
 document.getElementById('shelf-version').textContent = 'v' + NOOVEL_VERSION;
 
 applyStyle();
-renderShelf();
+migrateFoldersToTags().then(renderShelf);

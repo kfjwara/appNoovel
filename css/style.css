@@ -382,6 +382,20 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 
 .book-meta { font-size: 12px; opacity: .6; }
 
+.book-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.book-tag {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--ui-border);
+  opacity: .75;
+  white-space: nowrap;
+}
+
 .book-progress {
   height: 4px;
   background: var(--ui-line);
@@ -402,8 +416,8 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   cursor: pointer;
 }
 
-/* ===== フォルダ ===== */
-#folder-tabs {
+/* ===== タグ ===== */
+#tag-chips {
   display: flex;
   gap: 8px;
   overflow-x: auto;
@@ -411,8 +425,8 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
 }
-#folder-tabs::-webkit-scrollbar { display: none; }
-.folder-tab {
+#tag-chips::-webkit-scrollbar { display: none; }
+.tag-chip {
   flex-shrink: 0;
   padding: 6px 14px;
   border-radius: 16px;
@@ -424,8 +438,8 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   opacity: .7;
   white-space: nowrap;
 }
-.folder-tab.active { border-color: currentColor; font-weight: bold; opacity: 1; }
-.folder-add { opacity: .5; }
+.tag-chip.active { border-color: currentColor; font-weight: bold; opacity: 1; }
+.tag-add { opacity: .5; }
 
 .book-menu {
   background: none;
@@ -452,7 +466,7 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   cursor: pointer;
 }
 
-#folder-panel {
+#tag-panel {
   position: fixed;
   inset: 0;
   background: rgba(0,0,0,.5);
@@ -460,7 +474,7 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   align-items: flex-end;
   z-index: 110;
 }
-#folder-inner {
+#tag-inner {
   width: 100%;
   background: var(--ui-panel);
   color: var(--ui-text);
@@ -470,14 +484,14 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   flex-direction: column;
   gap: 14px;
 }
-#folder-list {
+#tag-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
   max-height: 40vh;
   overflow-y: auto;
 }
-.folder-pick-item {
+.tag-pick-item {
   padding: 12px;
   border-radius: 10px;
   border: 1px solid var(--ui-border);
@@ -487,8 +501,8 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   cursor: pointer;
   text-align: left;
 }
-.folder-pick-item.active { border-color: currentColor; font-weight: bold; }
-#btn-folder-cancel {
+.tag-pick-item.active { border-color: currentColor; font-weight: bold; }
+#btn-tag-close {
   background: #555;
   color: #fff;
   border: none;
