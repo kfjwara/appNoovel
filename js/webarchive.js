@@ -196,12 +196,10 @@ function novelPageToBook(doc, container) {
   const clean = s => (s || '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
   const qText = sel => { const el = doc.querySelector(sel); return el ? clean(el.textContent) : ''; };
 
-  let title = qText('h1.work-title');
-  // タブ題は空白正規化のみ。話数プレフィックス（#1等）やサイト名は情報として残す
-  if (!title) title = clean(doc.title || '');
-  // 話数（#N）はタブ題にしか無いことが多い。h1由来のタイトルに無ければタブ題から補う
-  const ep = (doc.title || '').match(/^#(\d+)\s*/);
-  if (ep && title && !/^#\d+/.test(title)) title = '#' + ep[1] + ' ' + title;
+  // タイトルはタブ題を正とし、成形は空白正規化のみ（話数#Nや｜以降も情報として残す）。
+  // ページ内のh1は話数・副題を持たない短縮版のことがあるため、タブ題が空のときの控えに回す
+  let title = clean(doc.title || '');
+  if (!title) title = qText('h1.work-title');
   const subtitle = qText('.series-badge');
 
   let author = qText('a[href^="/users/"] .value');
