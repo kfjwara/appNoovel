@@ -375,7 +375,6 @@ function openBook(record) {
 // 本のレコードに tags（文字列の配列）を持たせる。複数設定できる。
 // タグ一覧は localStorage に明示的に持つ（空タグや並び順を保てるように）
 const SHELF_PAGE = 30;
-const UNTAGGED = '__untagged__';   // 絞り込みチップ「タグなし」の内部値（タグ名としては使わせない）
 let currentTag = localStorage.getItem('noovel_shelf_tag') || '';
 let shelfLimit = SHELF_PAGE;
 
@@ -420,7 +419,6 @@ function selectTag(name) {
 function promptNewTag() {
   const name = (prompt('新しいタグ名') || '').trim();
   if (!name) return null;
-  if (name === UNTAGGED) { alert('その名前は使えません'); return null; }
   const tags = getTags();
   if (tags.includes(name)) { alert('同じ名前のタグがあります'); return null; }
   tags.push(name);
@@ -466,13 +464,17 @@ function renderTagChips() {
   const wrap = document.getElementById('tag-chips');
   wrap.innerHTML = '';
   const tags = getTags();
-  if (currentTag && currentTag !== UNTAGGED && !tags.includes(currentTag)) currentTag = '';
+  if (currentTag && !tags.includes(currentTag)) currentTag = '';
 
   const mk = (label, value, manageable) => {
     const b = document.createElement('button');
     b.className = 'tag-chip' + (currentTag === value ? ' active' : '');
     b.textContent = label;
-    b.addEventListener('click', () => selectTag(value));
+    // 選択中のタグをもう一度タップ＝改名/削除（長押しでも可）
+    b.addEventListener('click', () => {
+      if (manageable && currentTag === value) manageTag(value);
+      else selectTag(value);
+    });
     if (manageable) {
       let t = null;
       b.addEventListener('touchstart', () => { t = setTimeout(() => manageTag(value), 550); }, { passive: true });
@@ -484,7 +486,6 @@ function renderTagChips() {
   };
   mk('すべて', '', false);
   tags.forEach(t => mk(t, t, true));
-  mk('タグなし', UNTAGGED, false);
 
   const add = document.createElement('button');
   add.className = 'tag-chip tag-add';
@@ -566,9 +567,7 @@ async function renderShelf() {
   books.sort((a, b) => (b.lastReadAt || 0) - (a.lastReadAt || 0));
 
   renderTagChips();
-  const shown = currentTag === UNTAGGED ? books.filter(b => !recTags(b).length)
-    : currentTag ? books.filter(b => recTags(b).includes(currentTag))
-    : books;
+  const shown = currentTag ? books.filter(b => recTags(b).includes(currentTag)) : books;
 
   list.innerHTML = '';
   emptyMsg.classList.toggle('hidden', shown.length > 0);
@@ -620,7 +619,7 @@ async function renderShelf() {
     fill.style.width = pct + '%';
     bar.appendChild(fill);
 
-    // タグ行（タグが無い本は行ごと出さない）
+    // タグ行＝読了%の下（タグが無い本は行ごと出さない）
     const tags = recTags(rec);
     if (tags.length) {
       const tagsRow = document.createElement('div');
@@ -631,7 +630,7 @@ async function renderShelf() {
         chip.textContent = tg;
         tagsRow.appendChild(chip);
       });
-      main.append(title, tagsRow, meta, bar);
+      main.append(title, meta, tagsRow, bar);
     } else {
       main.append(title, meta, bar);
     }
