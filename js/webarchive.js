@@ -197,7 +197,8 @@ function novelPageToBook(doc, container) {
   const qText = sel => { const el = doc.querySelector(sel); return el ? clean(el.textContent) : ''; };
 
   let title = qText('h1.work-title');
-  if (!title) title = clean((doc.title || '').replace(/^#\d+\s*/, '').split('|')[0]);
+  // タブ題は空白正規化のみ。話数プレフィックス（#1等）やサイト名は情報として残す
+  if (!title) title = clean(doc.title || '');
   const subtitle = qText('.series-badge');
 
   let author = qText('a[href^="/users/"] .value');
