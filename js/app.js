@@ -37,8 +37,25 @@ const THEMES = {
     bgImage:
       'repeating-linear-gradient(0deg, transparent 0 27px, rgba(70,200,230,.045) 27px 28px),' +
       'repeating-linear-gradient(90deg, transparent 0 27px, rgba(70,200,230,.045) 27px 28px),' +
+      'radial-gradient(75% 45% at 88% -8%, rgba(185, 45, 165, .26) 0%, transparent 65%),' +   // 右上のマゼンタネオン
+      'radial-gradient(50% 35% at -5% 45%, rgba(140, 40, 170, .14) 0%, transparent 70%),' +   // 左の紫の残光
       'radial-gradient(90% 55% at 50% 118%, rgba(30,120,150,.22) 0%, transparent 65%),' +
-      'linear-gradient(180deg, #04090d 0%, #060f16 55%, #0a1922 100%)',
+      'linear-gradient(180deg, #070510 0%, #060f16 55%, #0a1922 100%)',
+  },
+  sakura: {
+    label: '桜', bg: '#fbeef1', text: '#5c3a44',
+    bgImage:
+      'radial-gradient(5px 4px at 18% 12%, rgba(238,160,180,.5), transparent 65%),' +
+      'radial-gradient(4px 3px at 74% 7%, rgba(238,160,180,.38), transparent 65%),' +
+      'radial-gradient(6px 5px at 88% 26%, rgba(244,178,196,.42), transparent 65%),' +
+      'radial-gradient(4px 3px at 8% 38%, rgba(238,160,180,.32), transparent 65%),' +
+      'radial-gradient(5px 4px at 55% 49%, rgba(244,178,196,.26), transparent 65%),' +
+      'radial-gradient(4px 3px at 30% 66%, rgba(238,160,180,.3), transparent 65%),' +
+      'radial-gradient(6px 5px at 80% 72%, rgba(244,178,196,.36), transparent 65%),' +
+      'radial-gradient(4px 3px at 14% 88%, rgba(238,160,180,.34), transparent 65%),' +
+      'radial-gradient(5px 4px at 62% 92%, rgba(244,178,196,.3), transparent 65%),' +
+      'radial-gradient(80% 30% at 50% 0%, rgba(255,255,255,.65), transparent 75%),' +
+      'linear-gradient(180deg, #fdf2f4 0%, #fbeef1 55%, #f7e3e9 100%)',
   },
 };
 
