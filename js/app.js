@@ -139,8 +139,10 @@ function detectSeriesName(title) {
   return t || null;
 }
 
-function finishImport(res, name, raw) {
-  if (res.warnings.length) alert('取り込みメモ：\n・' + res.warnings.join('\n・'));
+// 取り込みの最終処理。本は開かず本棚に足すだけ（開くかどうかは呼び出し側の仕事）。
+// quiet=true のとき（複数一括取り込み）は警告アラートを出さない。保存済みレコードを返す。
+async function finishImport(res, name, raw, quiet) {
+  if (res.warnings.length && !quiet) alert('取り込みメモ：\n・' + res.warnings.join('\n・'));
 
   const now = Date.now();
   const record = {
@@ -159,14 +161,13 @@ function finishImport(res, name, raw) {
     if (sname) {
       record.series = sname;
       record.episode = detectEpisode(record.title);
-      showToast(`シリーズ「${sname}」の #${record.episode} として登録しました`);
     }
   }
-  dbPut(record).catch(err => console.error('library save failed', err));
-  openBook(record);
+  await dbPut(record);
+  return record;
 }
 
-function importContent(raw, name, encWarning) {
+function importContent(raw, name, encWarning, quiet) {
   const stem = name.replace(/\.[^.]+$/, '');
   const ext = ((name.match(/\.([^.]+)$/) || [])[1] || '').toLowerCase();
   let res;
@@ -182,24 +183,17 @@ function importContent(raw, name, encWarning) {
     res = convertText(raw, stem);
   }
   if (encWarning) res.warnings.unshift(encWarning);
-  finishImport(res, name, raw);
+  return finishImport(res, name, raw, quiet);
 }
 
 // Safariで保存した .webarchive（Webページの丸ごと保存）の取り込み
-async function importWebarchive(file) {
-  document.getElementById('header-title').textContent = 'webarchive読み込み中…';
-  try {
-    const buf = await file.arrayBuffer();
-    const { html } = parseWebArchive(buf);
-    const res = webArchiveToBook(html, file.name.replace(/\.[^.]+$/, ''));
-    if (res.error) { alert('取り込めませんでした：' + res.error); return; }
-    finishImport(res, file.name, res.rawText || '');
-  } catch (err) {
-    console.error(err);
-    alert('webarchiveの読み込みに失敗しました：' + err.message);
-  } finally {
-    if (!book) document.getElementById('header-title').textContent = 'Noovel';
-  }
+// 失敗は throw で呼び出し側（file-input ハンドラ）に伝える
+async function importWebarchive(file, quiet) {
+  const buf = await file.arrayBuffer();
+  const { html } = parseWebArchive(buf);
+  const res = webArchiveToBook(html, file.name.replace(/\.[^.]+$/, ''));
+  if (res.error) throw new Error(res.error);
+  return finishImport(res, file.name, res.rawText || '', quiet);
 }
 
 // ===== Scroll axis helpers（縦書き=横スクロールに対応） =====
@@ -1681,56 +1675,67 @@ function loadPdfjs() {
   return pdfjsLoader;
 }
 
-async function importPdf(file) {
-  document.getElementById('header-title').textContent = 'PDF読み込み中…';
-  try {
-    const pdfjs = await loadPdfjs();
-    pdfjs.GlobalWorkerOptions.workerSrc = './js/pdfjs/pdf.worker.min.js';
-    const buf = await file.arrayBuffer();
-    const doc = await pdfjs.getDocument({ data: buf }).promise;
-    const numPages = doc.numPages;
-    const pages = [];
-    for (let p = 1; p <= numPages; p++) {
-      const page = await doc.getPage(p);
-      const tc = await page.getTextContent();
-      pages.push(tc.items.map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5] })));
-      page.cleanup();
-    }
-    doc.destroy();
-    const text = pdfPagesToText(pages);
-    if (!text.trim()) {
-      alert('このPDFからテキストを取り出せませんでした（スキャン画像PDFの可能性があります）');
-      return;
-    }
-    importContent(text, file.name, `PDFから抽出しました（${numPages}ページ）。段落・章立ては推定です`);
-  } catch (err) {
-    console.error(err);
-    alert('PDFの読み込みに失敗しました：' + err.message);
-  } finally {
-    if (!book) document.getElementById('header-title').textContent = 'Noovel';
+// 失敗は throw で呼び出し側（file-input ハンドラ）に伝える
+async function importPdf(file, quiet) {
+  const pdfjs = await loadPdfjs();
+  pdfjs.GlobalWorkerOptions.workerSrc = './js/pdfjs/pdf.worker.min.js';
+  const buf = await file.arrayBuffer();
+  const doc = await pdfjs.getDocument({ data: buf }).promise;
+  const numPages = doc.numPages;
+  const pages = [];
+  for (let p = 1; p <= numPages; p++) {
+    const page = await doc.getPage(p);
+    const tc = await page.getTextContent();
+    pages.push(tc.items.map(it => ({ str: it.str, x: it.transform[4], y: it.transform[5] })));
+    page.cleanup();
   }
+  doc.destroy();
+  const text = pdfPagesToText(pages);
+  if (!text.trim()) throw new Error('テキストを取り出せませんでした（スキャン画像PDFの可能性があります）');
+  return importContent(text, file.name, `PDFから抽出しました（${numPages}ページ）。段落・章立ては推定です`, quiet);
 }
 
-document.getElementById('file-input').addEventListener('change', e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  if (/\.pdf$/i.test(file.name)) {
-    importPdf(file);
-    e.target.value = '';
-    return;
-  }
-  if (/\.webarchive$/i.test(file.name)) {
-    importWebarchive(file);
-    e.target.value = '';
-    return;
-  }
-  const fr = new FileReader();
-  fr.onload = ev => {
-    const { text, enc } = decodeBuffer(ev.target.result);
-    importContent(text, file.name, enc === 'shift_jis' ? '文字コードをShift_JISとして読み込みました' : '');
-  };
-  fr.readAsArrayBuffer(file);
+// 拡張子で取り込みルートを振り分ける（1ファイルぶん）
+async function importFile(file, quiet) {
+  if (/\.pdf$/i.test(file.name)) return importPdf(file, quiet);
+  if (/\.webarchive$/i.test(file.name)) return importWebarchive(file, quiet);
+  const buf = await file.arrayBuffer();
+  const { text, enc } = decodeBuffer(buf);
+  return importContent(text, file.name, enc === 'shift_jis' ? '文字コードをShift_JISとして読み込みました' : '', quiet);
+}
+
+// 複数ファイル対応。重いファイル（PDF・webarchive）があるので1個ずつ順番に処理する。
+// 単発・複数とも本棚に留まる（開くかどうかはユーザーが本棚で決める）
+document.getElementById('file-input').addEventListener('change', async e => {
+  const files = Array.from(e.target.files || []);
   e.target.value = '';
+  if (!files.length) return;
+  const single = files.length === 1;
+  const header = document.getElementById('header-title');
+  let okCount = 0, seriesCount = 0, lastRec = null;
+  const failed = [];
+  for (let i = 0; i < files.length; i++) {
+    header.textContent = single ? '取り込み中…' : `取り込み中… ${i + 1} / ${files.length}`;
+    try {
+      const rec = await importFile(files[i], !single);   // 複数時は個別アラートを黙らせる
+      okCount++;
+      lastRec = rec;
+      if (rec.series) seriesCount++;
+    } catch (err) {
+      console.error('import failed:', files[i].name, err);
+      failed.push(files[i].name + (err && err.message ? `（${err.message}）` : ''));
+    }
+  }
+  header.textContent = 'Noovel';
+  renderShelf();
+  if (single && lastRec) {
+    showToast(lastRec.series
+      ? `「${lastRec.series}」の #${lastRec.episode} として取り込みました`
+      : `「${lastRec.title}」を取り込みました`);
+  } else if (!single && okCount) {
+    showToast(`${okCount}冊を取り込みました` + (seriesCount ? `（シリーズ判定 ${seriesCount}冊）` : ''));
+  }
+  if (failed.length) alert('取り込めなかったファイル：\n・' + failed.join('\n・'));
 });
 
 // ===== Paste import =====
@@ -1764,7 +1769,9 @@ document.getElementById('btn-paste-import').addEventListener('click', () => {
   document.getElementById('paste-panel').classList.add('hidden');
   document.getElementById('paste-text').value = '';
   document.getElementById('paste-title').value = '';
-  importContent(text, name, '');
+  importContent(text, name, '')
+    .then(rec => { renderShelf(); showToast(`「${rec.title}」を取り込みました`); })
+    .catch(err => { console.error(err); alert('取り込みに失敗しました：' + err.message); });
 });
 
 // ===== Chapter navigation =====
