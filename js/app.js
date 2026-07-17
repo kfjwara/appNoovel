@@ -134,6 +134,30 @@ function decodeBuffer(buf) {
   catch (e) { return { text: new TextDecoder('shift_jis').decode(buf), enc: 'shift_jis' }; }
 }
 
+const CHARCOUNT_V = 2;   // 文字数の数え方を変えたら上げる（保存済みの値を一度だけ作り直させる）
+
+// 文字数の表示用フォーマット: 400文字 / 4,000文字 / 4.12万文字（末尾ゼロは省く: 4万文字）
+function formatCharCount(n) {
+  if (n < 10000) return n.toLocaleString() + '文字';
+  const man = (Math.round(n / 100) / 100).toFixed(2).replace(/\.?0+$/, '');
+  return man + '万文字';
+}
+
+// 本文の総文字数（段落・見出し・表のセル・章タイトルを合算）
+// 章タイトルも数えるのは、取り込みの章推定で本文の短い行が章タイトル側に入ることがあるため
+function bookCharCount(bk) {
+  let n = 0;
+  (bk.chapters || []).forEach(ch => {
+    if (ch.title) n += ch.title.length;
+    if (typeof ch.text === 'string') n += ch.text.length;   // 簡易形（ch.text）への防御
+    (ch.blocks || []).forEach(b => {
+      if (b.text) n += b.text.length;
+      else if (b.rows) b.rows.forEach(row => row.forEach(cell => { n += cell.length; }));
+    });
+  });
+  return n;
+}
+
 // ===== シリーズ判定 =====
 // pixivの「#話数 シリーズ名＋巻数」形式のタイトルから話数・シリーズ名を推定する
 function zenToHan(s) {
@@ -169,6 +193,8 @@ async function finishImport(res, name, raw, quiet) {
     noovel: res.book,
     raw,
     chapterCount: res.book.chapters.length,
+    charCount: bookCharCount(res.book),
+    charCountV: CHARCOUNT_V,
     addedAt: now,
     lastReadAt: now,
   };
@@ -1222,7 +1248,13 @@ function buildBookMain(rec, withTags) {
   const meta = document.createElement('div');
   meta.className = 'book-meta';
   const pct = Math.round(bookProgress(rec) * 100);
-  meta.textContent = `${pct}%読了`;
+  // 文字数：無い or 数え方が古ければ、その場で一度だけ計算して保存（既存の本の後埋め）
+  if ((rec.charCount == null || rec.charCountV !== CHARCOUNT_V) && rec.noovel) {
+    rec.charCount = bookCharCount(rec.noovel);
+    rec.charCountV = CHARCOUNT_V;
+    dbPut(rec).catch(() => {});
+  }
+  meta.textContent = `${pct}%読了` + (rec.charCount ? ` / ${formatCharCount(rec.charCount)}` : '');
 
   const bar = document.createElement('div');
   bar.className = 'book-progress';
