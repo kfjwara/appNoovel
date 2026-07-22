@@ -349,8 +349,10 @@ function renderChapter(idx, pos = {}) {
     } else if (b.t === 'gap') {
       el = document.createElement('div');
       el.className = 'scene-gap';
-      // n = 元の空行数。大きさを反映する（省略時は従来の2.2em＝n:2相当、上限4）
-      if (b.n) el.style.height = (Math.min(b.n, 4) * 1.1) + 'em';
+      // n = 元の空行数。大きさを反映する（省略時は従来の2.2em＝n:2相当）。
+      // blockSize（横書き＝高さ／縦書き＝幅）で指定。height だと縦書きで隙間が出ない。
+      // 上限8で青天井を防ぎつつ、空行1つ(1.1em)と場面転換(2.2em〜)をはっきり差別化する
+      if (b.n) el.style.blockSize = (Math.min(b.n, 8) * 1.1) + 'em';
     } else if (b.t === 'table') {
       el = document.createElement('div');
       el.className = 'table-wrap';

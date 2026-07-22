@@ -154,24 +154,33 @@ function novelPageLines(container) {
       return;
     }
     if (el.classList.contains('novel-newline')) {
-      const n = el.querySelectorAll('br').length || 1;
-      for (let i = 0; i < n; i++) lines.push({ kind: 'blank' });
+      // pixiv は段落の普通の区切りには novel-newline を使わず、novel-paragraph を連続させる。
+      // novel-newline が出るのは「場面転換」の意図的な空白で、中は br 2個＝ほぼ1行ぶんの空き。
+      // よって div 1個 ≒ 空行2つ相当（n=2, 2.2em）として、通常の段落間とはっきり差をつける。
+      // 場面転換で div が2つ連続すればさらに大きい間（n=4）になる。
+      lines.push({ kind: 'blank' });
+      lines.push({ kind: 'blank' });
       return;
     }
-    // 段落：<br>区切りで行に分ける
+    // 段落：<br>区切りで行に分ける。
+    // pixiv は段落を空の text-count span でラップするため、中身の無い行が生じる。
+    // 空行は novel-newline からのみ生みたいので、ここでは中身のある行だけを push する
+    // （そうしないと普通の段落境界にも余計な gap が出て、場面転換との差が潰れる）
     let cur = '';
+    const pushLine = () => { if (cur.trim()) lines.push({ kind: 'text', text: cur }); cur = ''; };
     const walk = node => {
       node.childNodes.forEach(ch => {
         if (ch.nodeType === Node.TEXT_NODE) { cur += ch.nodeValue; return; }
         if (ch.nodeType !== Node.ELEMENT_NODE) return;
-        if (ch.tagName === 'BR') { lines.push({ kind: 'text', text: cur }); cur = ''; return; }
+        if (ch.tagName === 'BR') { pushLine(); return; }
         if (ch.tagName === 'RUBY') { cur += rubyToText(ch); return; }
         walk(ch);
       });
     };
     walk(el);
-    lines.push({ kind: 'text', text: cur });
-    lines.push({ kind: 'blank' }); // 段落間の区切り
+    pushLine();
+    // 段落間に無条件の空行は入れない。連続する novel-paragraph は「間なし」で続き、
+    // 空行は novel-newline からのみ生む（原文の空行の数＝間の大きさを保つ）
   });
   return lines;
 }

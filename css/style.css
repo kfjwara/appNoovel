@@ -331,7 +331,7 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   margin: 1.8em 0 .9em;
 }
 
-.scene-gap { height: 2.2em; }
+.scene-gap { block-size: 2.2em; }   /* 横書き＝高さ／縦書き＝幅。段落間の「間」を両モードで作る */
 
 .table-wrap { overflow-x: auto; margin: 1.2em 0; }
 .n-table {
