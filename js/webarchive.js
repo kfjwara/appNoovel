@@ -154,19 +154,16 @@ function novelPageLines(container) {
       return;
     }
     if (el.classList.contains('novel-newline')) {
-      // pixiv は段落の普通の区切りには novel-newline を使わず、novel-paragraph を連続させる。
-      // novel-newline が出るのは「場面転換」の意図的な空白で、中は br 2個＝ほぼ1行ぶんの空き。
-      // よって div 1個 ≒ 空行2つ相当（n=2, 2.2em）として、通常の段落間とはっきり差をつける。
-      // 場面転換で div が2つ連続すればさらに大きい間（n=4）になる。
-      lines.push({ kind: 'blank' });
+      // novel-newline は「場面転換」の意図的な空白。段落境界の空行（下記）に上乗せされて
+      // より大きい間になる（通常の段落境界=1、場面転換=2、二重novel-newline=3…）
       lines.push({ kind: 'blank' });
       return;
     }
     // 段落：<br>区切りで行に分ける。
     // pixiv は段落を空の text-count span でラップするため、中身の無い行が生じる。
-    // 空行は novel-newline からのみ生みたいので、ここでは中身のある行だけを push する
-    // （そうしないと普通の段落境界にも余計な gap が出て、場面転換との差が潰れる）
+    // 段落「内」の行は間を空けず（<br>は行送りのみ）、中身のある行だけ push する。
     let cur = '';
+    const before = lines.length;
     const pushLine = () => { if (cur.trim()) lines.push({ kind: 'text', text: cur }); cur = ''; };
     const walk = node => {
       node.childNodes.forEach(ch => {
@@ -179,8 +176,9 @@ function novelPageLines(container) {
     };
     walk(el);
     pushLine();
-    // 段落間に無条件の空行は入れない。連続する novel-paragraph は「間なし」で続き、
-    // 空行は novel-newline からのみ生む（原文の空行の数＝間の大きさを保つ）
+    // 段落「境界」には空行を1つ入れる（pixiv が各 novel-paragraph に付ける約1.5emの余白に相当）。
+    // 中身を出した段落のときだけ。これで段落ごとのゆったり感を再現し、場面転換はさらに大きくなる
+    if (lines.length > before) lines.push({ kind: 'blank' });
   });
   return lines;
 }
