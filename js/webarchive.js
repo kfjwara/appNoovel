@@ -160,24 +160,25 @@ function novelPageLines(container) {
       return;
     }
     // 段落：<br>区切りで行に分ける。
-    // pixiv は段落を空の text-count span でラップするため、中身の無い行が生じる。
-    // 段落「内」の行は間を空けず（<br>は行送りのみ）、中身のある行だけ push する。
+    // pixiv は「空の text-count span + <br>」で意図的な空行（間）を表す。<br>の手前が空なら
+    // その空行を保持する（＝場面転換や段落頭の間）。ただし段落末尾に付く空 span はゴミなので無視。
     let cur = '';
     const before = lines.length;
-    const pushLine = () => { if (cur.trim()) lines.push({ kind: 'text', text: cur }); cur = ''; };
+    const pushAtBr = () => { lines.push(cur.trim() ? { kind: 'text', text: cur } : { kind: 'blank' }); cur = ''; };
+    const pushAtEnd = () => { if (cur.trim()) lines.push({ kind: 'text', text: cur }); cur = ''; };
     const walk = node => {
       node.childNodes.forEach(ch => {
         if (ch.nodeType === Node.TEXT_NODE) { cur += ch.nodeValue; return; }
         if (ch.nodeType !== Node.ELEMENT_NODE) return;
-        if (ch.tagName === 'BR') { pushLine(); return; }
+        if (ch.tagName === 'BR') { pushAtBr(); return; }
         if (ch.tagName === 'RUBY') { cur += rubyToText(ch); return; }
         walk(ch);
       });
     };
     walk(el);
-    pushLine();
-    // 段落「境界」には空行を1つ入れる（pixiv が各 novel-paragraph に付ける約1.5emの余白に相当）。
-    // 中身を出した段落のときだけ。これで段落ごとのゆったり感を再現し、場面転換はさらに大きくなる
+    pushAtEnd();
+    // 段落「境界」にも空行を1つ（pixiv が各 novel-paragraph に付ける約1.5emの余白に相当）。
+    // 中身を出した段落のときだけ。段落頭の空行（上記）と合わさると場面転換がより大きくなる
     if (lines.length > before) lines.push({ kind: 'blank' });
   });
   return lines;
