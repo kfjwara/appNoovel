@@ -182,7 +182,7 @@ function convertText(raw, stem, opts) {
   let metaLines = 0;
   for (const l of pre) {
     const t = l.trim();
-    if (!t) continue;
+    if (!t) { preBody.push(l); continue; }   // 空行は本文へ残す（章無し作品で場面転換のgapが消えないように）
     const am = t.match(/^(?:著者|作者|author)[:：]\s*(.+)$/i);
     if (am && !author) { author = am[1].trim(); continue; }
     if (!title && preNonBlank.length <= 3 && t.length <= 40 && !/[。！？]$/.test(t)) {
