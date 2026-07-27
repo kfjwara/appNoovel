@@ -1195,15 +1195,11 @@ function renderSeriesView(list, books) {
     list.appendChild(head);
 
     groups.get(openSeriesName).forEach(rec => {
-      const card = document.createElement('div');
-      card.className = 'book-card';
-      card.dataset.id = rec.id;
+      // #N バッジを左端に、本棚と同じスワイプ削除＋⋯編集つきのカード
       const badge = document.createElement('span');
       badge.className = 'ep-badge';
       badge.textContent = '#' + (rec.episode == null ? '?' : rec.episode);
-      const main = buildBookMain(rec, false);
-      main.addEventListener('click', () => openRecord(rec));
-      card.append(badge, main);
+      const { card } = buildBookCard(rec, badge, false);
       list.appendChild(card);
     });
     return;
@@ -1303,6 +1299,50 @@ function buildBookMain(rec, withTags) {
     main.append(title, meta, bar);
   }
   return main;
+}
+
+// スワイプ削除＋⋯編集つきの本カードを作る。本棚・シリーズ内の両方で共用。
+// leftEl は左端の要素（本棚＝≡ドラッグハンドル／シリーズ内＝#N バッジ）。withTags でタグ行の有無。
+// 戻り値 { card, slider }（本棚はこの後 handle に attachDragHandle する）
+function buildBookCard(rec, leftEl, withTags) {
+  const card = document.createElement('div');
+  card.className = 'book-card';
+  card.dataset.id = rec.id;
+
+  const slider = document.createElement('div');
+  slider.className = 'book-slide';
+
+  const main = buildBookMain(rec, withTags);
+  main.addEventListener('click', () => { if (swipeGuard()) return; openRecord(rec); });
+
+  const menu = document.createElement('button');
+  menu.className = 'book-menu';
+  menu.textContent = '⋯';
+  menu.setAttribute('aria-label', '本を編集');
+  menu.addEventListener('click', e => {
+    e.stopPropagation();
+    if (swipeGuard()) return;
+    openTagEditor(rec);
+  });
+
+  const del = document.createElement('button');
+  del.className = 'book-delete';
+  del.textContent = '✕';
+  del.setAttribute('aria-label', '削除');
+  del.addEventListener('click', async e => {
+    e.stopPropagation();
+    if (!confirm(`「${rec.title}」を本棚から削除しますか？`)) return;
+    await dbDelete(rec.id).catch(err => console.error('delete failed', err));
+    localStorage.removeItem('bm_' + rec.id);
+    if (localStorage.getItem('noovel_last') === rec.id) localStorage.removeItem('noovel_last');
+    renderShelf();
+  });
+
+  if (leftEl) slider.appendChild(leftEl);
+  slider.append(main, menu, del);
+  card.appendChild(slider);
+  attachSwipeDelete(card, slider);
+  return { card, slider };
 }
 
 async function renderShelf(animate) {
@@ -1419,49 +1459,13 @@ async function renderShelf(animate) {
       return;
     }
 
-    const card = document.createElement('div');
-    card.className = 'book-card';
-    card.dataset.id = rec.id;
-
-    // スライド面。左スワイプで translateX して、右外に隠した削除ボタンが現れる
-    const slider = document.createElement('div');
-    slider.className = 'book-slide';
-
+    // ≡ドラッグハンドル（本棚の並べ替え用）を左端に、スワイプ削除＋⋯編集つきのカードを作る
     const handle = document.createElement('button');
     handle.className = 'drag-handle';
     handle.textContent = '≡';
     handle.setAttribute('aria-label', 'ドラッグで並べ替え');
+    const { card } = buildBookCard(rec, handle, true);
     attachDragHandle(handle, card, idx, rendered, books);
-
-    const main = buildBookMain(rec, true);
-    main.addEventListener('click', () => { if (swipeGuard()) return; openRecord(rec); });
-
-    const menu = document.createElement('button');
-    menu.className = 'book-menu';
-    menu.textContent = '⋯';
-    menu.setAttribute('aria-label', '本を編集');
-    menu.addEventListener('click', e => {
-      e.stopPropagation();
-      if (swipeGuard()) return;
-      openTagEditor(rec);
-    });
-
-    const del = document.createElement('button');
-    del.className = 'book-delete';
-    del.textContent = '✕';
-    del.setAttribute('aria-label', '削除');
-    del.addEventListener('click', async e => {
-      e.stopPropagation();
-      if (!confirm(`「${rec.title}」を本棚から削除しますか？`)) return;
-      await dbDelete(rec.id).catch(err => console.error('delete failed', err));
-      localStorage.removeItem('bm_' + rec.id);
-      if (localStorage.getItem('noovel_last') === rec.id) localStorage.removeItem('noovel_last');
-      renderShelf();
-    });
-
-    slider.append(handle, main, menu, del);
-    card.appendChild(slider);
-    attachSwipeDelete(card, slider);
     list.appendChild(card);
   });
 
