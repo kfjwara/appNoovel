@@ -542,8 +542,27 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 /* ===== 並び替え ===== */
 #sort-row {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
   margin: -6px 0 10px;
+}
+#shelf-count {
+  font-size: 11px;
+  opacity: .55;
+  white-space: nowrap;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+#shelf-search {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;   /* 16px未満だとiOSがフォーカス時に画面を拡大するので厳守 */
+  padding: 4px 10px;
+  border: 1px solid var(--ui-border);
+  border-radius: 8px;
+  background: var(--ui-input-bg);
+  color: inherit;
+  font-family: inherit;
 }
 #sort-btn, #series-btn {
   display: flex;

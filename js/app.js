@@ -198,12 +198,26 @@ async function finishImport(res, name, raw, quiet) {
     addedAt: now,
     lastReadAt: now,
   };
-  // シリーズ自動判定（「#話数 〜」形式のときだけ。取り込み時のみ働き、あとは情報タブで直せる）
-  if (/^#\s*\d+/.test(record.title)) {
-    const sname = detectSeriesName(record.title);
-    if (sname) {
+  // シリーズ自動判定：同じシリーズ名の「仲間」が既に本棚にいる時だけシリーズ化する。
+  // pixivタイトルは単品でも #N で始まるので、それだけでは単品が全部シリーズ化してしまう。
+  // 2冊目が来た時点で、1冊目も遡ってまとめてシリーズにする。
+  const sname = /^#\s*\d+/.test(record.title) ? detectSeriesName(record.title) : null;
+  if (sname) {
+    let existing = [];
+    try { existing = await dbGetAll(); } catch (e) {}
+    const siblings = existing.filter(b => b.id !== record.id &&
+      (b.series === sname || (/^#\s*\d+/.test(b.title) && detectSeriesName(b.title) === sname)));
+    if (siblings.length) {
       record.series = sname;
       record.episode = detectEpisode(record.title);
+      // まだシリーズ化していない仲間を遡って登録
+      for (const b of siblings) {
+        if (b.series !== sname) {
+          b.series = sname;
+          if (b.episode == null) b.episode = detectEpisode(b.title);
+          await dbPut(b).catch(() => {});
+        }
+      }
     }
   }
   await dbPut(record);
@@ -452,6 +466,14 @@ function openBook(record) {
 const SHELF_PAGE = 30;
 let currentTag = localStorage.getItem('noovel_shelf_tag') || '';
 let shelfLimit = SHELF_PAGE;
+let shelfSearch = '';   // 本棚のタイトル検索キーワード
+let singletonCleaned = false;   // 1冊だけのシリーズを一度だけ自動解除するためのフラグ
+
+document.getElementById('shelf-search').addEventListener('input', e => {
+  shelfSearch = e.target.value.trim();
+  shelfLimit = SHELF_PAGE;
+  renderShelf();
+});
 
 function getTags() {
   try { return JSON.parse(localStorage.getItem('noovel_tags') || '[]'); }
@@ -1292,10 +1314,24 @@ async function renderShelf(animate) {
   } catch (err) {
     console.error('library load failed', err);
   }
+  // 1冊しかないシリーズ（旧ロジックの誤爆分）を起動時に一度だけ自動解除する
+  if (!singletonCleaned) {
+    singletonCleaned = true;
+    const cnt = {};
+    books.forEach(b => { if (b.series) cnt[b.series] = (cnt[b.series] || 0) + 1; });
+    books.forEach(b => {
+      if (b.series && cnt[b.series] === 1) { delete b.series; delete b.episode; dbPut(b).catch(() => {}); }
+    });
+  }
+
   books = sortBooks(books);
 
   renderTagChips();
-  const shown = currentTag ? books.filter(b => recTags(b).includes(currentTag)) : books;
+  let shown = currentTag ? books.filter(b => recTags(b).includes(currentTag)) : books;
+  if (shelfSearch) {
+    const q = shelfSearch.toLowerCase();
+    shown = shown.filter(b => (b.title || '').toLowerCase().includes(q));
+  }
 
   // モード別の出し分け：
   // - シリーズビュー中はタグ絞り込みと並び替えを隠す（シリーズの追加は一覧見出しの＋から）
@@ -1303,6 +1339,11 @@ async function renderShelf(animate) {
   document.getElementById('tag-chips').classList.toggle('hidden', seriesView && !selectMode);
   document.getElementById('sort-row').classList.toggle('hidden', selectMode);
   document.getElementById('sort-btn').classList.toggle('hidden', seriesView);
+  // 件数・検索は通常の本棚表示のときだけ（シリーズビュー・選択モードでは隠す）
+  const shelfTools = !seriesView && !selectMode;
+  document.getElementById('shelf-count').classList.toggle('hidden', !shelfTools);
+  document.getElementById('shelf-search').classList.toggle('hidden', !shelfTools);
+  document.getElementById('shelf-count').textContent = shown.length + '冊';
 
   // 並び替え切替をFLIPで滑らかに（切替前の位置を覚えておく）
   const firstTop = {};
@@ -1316,9 +1357,11 @@ async function renderShelf(animate) {
   openSwipe = null;   // カードを作り直すので開いていたスワイプの参照を捨てる
   emptyMsg.classList.toggle('hidden', shown.length > 0);
   if (emptyMsg.children[1]) {
-    emptyMsg.children[1].innerHTML = books.length
-      ? 'このタグの本はありません'
-      : '「開く」からテキストファイルを<br>読み込んでください';
+    emptyMsg.children[1].innerHTML = shelfSearch
+      ? `「${shelfSearch}」に一致する本はありません`
+      : books.length
+        ? 'このタグの本はありません'
+        : '「開く」からテキストファイルを<br>読み込んでください';
   }
 
   // 続きから読む：下部固定ピル（最後に開いた本へ1タップで再開）
