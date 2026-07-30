@@ -1329,7 +1329,7 @@ function buildBookCard(rec, leftEl, withTags, removeFromSeries) {
 
   const del = document.createElement('button');
   del.className = 'book-delete' + (removeFromSeries ? ' unlink' : '');
-  del.textContent = removeFromSeries ? '外す' : '✕';
+  del.textContent = removeFromSeries ? '－' : '✕';
   del.setAttribute('aria-label', removeFromSeries ? 'シリーズから外す' : '削除');
   del.addEventListener('click', async e => {
     e.stopPropagation();
