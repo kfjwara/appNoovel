@@ -1199,7 +1199,7 @@ function renderSeriesView(list, books) {
       const badge = document.createElement('span');
       badge.className = 'ep-badge';
       badge.textContent = '#' + (rec.episode == null ? '?' : rec.episode);
-      const { card } = buildBookCard(rec, badge, false);
+      const { card } = buildBookCard(rec, badge, false, true);   // シリーズ内＝✕は「外す」
       list.appendChild(card);
     });
     return;
@@ -1303,8 +1303,10 @@ function buildBookMain(rec, withTags) {
 
 // スワイプ削除＋⋯編集つきの本カードを作る。本棚・シリーズ内の両方で共用。
 // leftEl は左端の要素（本棚＝≡ドラッグハンドル／シリーズ内＝#N バッジ）。withTags でタグ行の有無。
+// removeFromSeries=true のとき（シリーズ内）は、スワイプの✕が「本の削除」ではなく
+// 「シリーズから外す」になる（本は本棚に残る）。
 // 戻り値 { card, slider }（本棚はこの後 handle に attachDragHandle する）
-function buildBookCard(rec, leftEl, withTags) {
+function buildBookCard(rec, leftEl, withTags, removeFromSeries) {
   const card = document.createElement('div');
   card.className = 'book-card';
   card.dataset.id = rec.id;
@@ -1326,11 +1328,27 @@ function buildBookCard(rec, leftEl, withTags) {
   });
 
   const del = document.createElement('button');
-  del.className = 'book-delete';
-  del.textContent = '✕';
-  del.setAttribute('aria-label', '削除');
+  del.className = 'book-delete' + (removeFromSeries ? ' unlink' : '');
+  del.textContent = removeFromSeries ? '外す' : '✕';
+  del.setAttribute('aria-label', removeFromSeries ? 'シリーズから外す' : '削除');
   del.addEventListener('click', async e => {
     e.stopPropagation();
+    if (removeFromSeries) {
+      // シリーズから外すだけ（本は本棚に残す）
+      const sname = rec.series;
+      if (!confirm(`「${rec.title}」をシリーズから外しますか？（本は本棚に残ります）`)) return;
+      delete rec.series;
+      delete rec.episode;
+      await dbPut(rec).catch(err => console.error('unlink failed', err));
+      // 残りが1冊以下になったらシリーズを解散（1冊シリーズは作らない方針）
+      try {
+        const rest = (await dbGetAll()).filter(b => b.series === sname);
+        if (rest.length === 1) { const b = rest[0]; delete b.series; delete b.episode; await dbPut(b).catch(() => {}); }
+      } catch (err) {}
+      showToast('シリーズから外しました');
+      renderShelf();
+      return;
+    }
     if (!confirm(`「${rec.title}」を本棚から削除しますか？`)) return;
     await dbDelete(rec.id).catch(err => console.error('delete failed', err));
     localStorage.removeItem('bm_' + rec.id);

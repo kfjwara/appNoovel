@@ -513,6 +513,8 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   font-size: 16px;
   cursor: pointer;
 }
+/* シリーズから「外す」＝非破壊なので、削除の黒とは違う控えめな灰色に */
+.book-delete.unlink { background: #8a8a8e; font-size: 14px; }
 
 /* ===== タグ ===== */
 #tag-chips {
