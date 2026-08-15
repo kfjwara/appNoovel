@@ -558,14 +558,19 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 #shelf-search {
   flex: 1;
   min-width: 0;
-  font-size: 16px;   /* 16px未満だとiOSがフォーカス時に画面を拡大するので厳守 */
-  padding: 4px 10px;
-  border: 1px solid var(--ui-border);
-  border-radius: 8px;
-  background: var(--ui-input-bg);
+  font-size: 14px;   /* 16px未満のiOS自動ズームはviewportのmaximum-scale=1で抑止済み */
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--ui-active);
   color: inherit;
   font-family: inherit;
+  -webkit-appearance: none;  /* iOS Safariのsearch用ネイティブ装飾を消す */
+  appearance: none;
+  outline: none;
 }
+#shelf-search:focus { background: var(--ui-line); }
+#shelf-search::-webkit-search-cancel-button { -webkit-appearance: none; }
 #sort-btn, #series-btn {
   display: flex;
   align-items: center;
