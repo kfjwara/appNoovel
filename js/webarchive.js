@@ -143,17 +143,36 @@ function rubyToText(ruby) {
   return rt ? base + '（' + rt + '）' : base;
 }
 
+// pixivがNext.js（CSS Modules）に移行し、本文のクラス名が
+//   novel-paragraph → style_novel-paragraph__eKYp5
+// のようにハッシュ付きへ変わった。ハッシュはCSSが変わるたびに変わるので決め打ちできない。
+// 「素のクラス名そのもの（旧形式）」か「style_<名前>__ で始まる（新形式）」かで判定する。
+function hasCls(el, name) {
+  const list = el.classList;
+  if (!list) return false;
+  const prefix = 'style_' + name + '__';
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
+    if (c === name || c.indexOf(prefix) === 0) return true;
+  }
+  return false;
+}
+
 // 小説ページの本文DOMを「行の並び」へ復元する
-// p.novel-paragraph 内は <br> が改行、div.novel-newline は空行、.novel-chapter は章見出し
+// novel-paragraph 内は <br> が改行、novel-newline は空行、novel-chapter は章見出し
 function novelPageLines(container) {
   const lines = []; // { kind: 'text'|'chapter'|'blank', text }
-  const els = container.querySelectorAll('p.novel-paragraph, div.novel-newline, .novel-chapter');
+  // 部分一致で拾ってから hasCls で厳密に絞る（[class*=] だけだと別名クラスを巻き込むため）
+  const els = container.querySelectorAll('[class*="novel-paragraph"], [class*="novel-newline"], [class*="novel-chapter"]');
   els.forEach(el => {
-    if (el.classList.contains('novel-chapter')) {
+    const isChapter = hasCls(el, 'novel-chapter');
+    const isNewline = hasCls(el, 'novel-newline');
+    if (!isChapter && !isNewline && !hasCls(el, 'novel-paragraph')) return;
+    if (isChapter) {
       lines.push({ kind: 'chapter', text: el.textContent.trim() });
       return;
     }
-    if (el.classList.contains('novel-newline')) {
+    if (isNewline) {
       // novel-newline は「場面転換」の意図的な空白。段落境界の空行（下記）に上乗せされて
       // より大きい間になる（通常の段落境界=1、場面転換=2、二重novel-newline=3…）
       lines.push({ kind: 'blank' });
@@ -199,21 +218,39 @@ function novelPageLinesToBlocks(lines) {
   return blocks;
 }
 
+// 小説ページとして取り込む。構造を認識できなかったときは null を返し、
+// 呼び出し側（webArchiveToBook）が汎用抽出へフォールバックする
 function novelPageToBook(doc, container) {
   const warnings = [];
   const clean = s => (s || '').replace(/ /g, ' ').replace(/\s+/g, ' ').trim();
   const qText = sel => { const el = doc.querySelector(sel); return el ? clean(el.textContent) : ''; };
 
-  // タイトルはタブ題を正とし、成形は空白正規化のみ（話数#Nや｜以降も情報として残す）。
-  // ページ内のh1は話数・副題を持たない短縮版のことがあるため、タブ題が空のときの控えに回す
-  let title = clean(doc.title || '');
-  if (!title) title = qText('h1.work-title');
-  const subtitle = qText('.series-badge');
+  // タイトルはページ内のh1（作品名そのもの）を正とする。
+  // 旧pixivのタブ題は「#N 作品名 - ◯◯の小説 - pixiv」だったが、新pixiv（Next.js）では
+  // 「#N 作品名 | シリーズ名（途中で切れる） - pixiv」や「#タグ #タグ 作品名 - ◯◯の - pixiv」に
+  // なり、そのまま使うとタグや千切れたシリーズ名が混ざる。ただしh1には話数#Nが入らないので、
+  // シリーズバッジの「#N」か、タブ題の先頭の「#N 」から補って従来と同じ見え方に戻す。
+  let title = qText('h1[class*="work-title"]');
+  if (title) {
+    let order = qText('[class*="series-badge"] [class*="series-order"]');
+    if (!order) {
+      const mo = (doc.title || '').match(/^\s*(#\d+)\s/); // 先頭が #数字 のときだけ話数とみなす（#タグは拾わない）
+      if (mo) order = mo[1];
+    }
+    if (order && title.indexOf(order) !== 0) title = clean(order + ' ' + title);
+  }
+  if (!title) title = clean(doc.title || '');
 
-  let author = qText('a[href^="/users/"] .value');
+  // シリーズ名。新形式のバッジは「シリーズ名 + #N」なので内側のシリーズ名だけを取り、
+  // 取れなければ（＝旧形式）バッジ全体のテキストを使う
+  let subtitle = qText('[class*="series-badge"] [class*="series-title"]');
+  if (!subtitle) subtitle = qText('[class*="series-badge"]');
+
+  let author = qText('a[href^="/users/"] [class*="value"]');
   if (!author) {
-    // ページタイトル末尾の「 - ◯◯の小説(シリーズ) - サイト名」から著者名を拾う
-    const m = (doc.title || '').match(/-\s*([^\-]+?)の小説(?:シリーズ)?\s*-/);
+    // ページタイトル末尾の「 - ◯◯の小説(シリーズ) - pixiv」「 - ◯◯の - pixiv」から著者名を拾う
+    const m = (doc.title || '').match(/-\s*([^\-]+?)の(?:小説(?:シリーズ)?)?\s*-\s*pixiv\s*$/)
+           || (doc.title || '').match(/-\s*([^\-]+?)の小説(?:シリーズ)?\s*-/);
     if (m) author = m[1].trim();
   }
 
@@ -224,10 +261,10 @@ function novelPageToBook(doc, container) {
     .map(l => l.kind === 'blank' ? '' : l.kind === 'chapter' ? '【' + l.text + '】' : (l.text || '').replace(/ /g, ' '))
     .join('\n');
 
-  // 章タグ（.novel-chapter）が無い作品：作者が「一」「二」等の素の行で章を書いている
+  // 章タグ（novel-chapter）が無い作品：作者が「一」「二」等の素の行で章を書いている
   // ことが多いので、テキスト用ヒューリスティック（convertText）で章見出しを推定する
   if (!lines.some(l => l.kind === 'chapter')) {
-    if (!rawText.trim()) return { error: '本文を取り出せませんでした（本文が空のページかもしれません）' };
+    if (!rawText.trim()) return null; // 構造を認識できず → 呼び出し側で汎用抽出にフォールバック
     const res = convertText(rawText, title, { gapMin: 1 });
     if (title) res.book.title = title;
     if (subtitle) res.book.subtitle = subtitle;
@@ -237,7 +274,7 @@ function novelPageToBook(doc, container) {
     return res;
   }
 
-  // .novel-chapter（章タグ）で章に分割
+  // novel-chapter（章タグ）で章に分割
   const chapters = [];
   let curTitle = '';
   let buf = [];
@@ -252,15 +289,16 @@ function novelPageToBook(doc, container) {
   }
   flush();
 
-  if (!chapters.length) return { error: '本文を取り出せませんでした（本文が空のページかもしれません）' };
+  if (!chapters.length) return null; // 同上
 
   warnings.push('小説ページとして構造ごと取り込みました');
   return { book: { title, subtitle, author, chapters }, warnings, rawText };
 }
 
 // 一般のWebページ用：本文らしきテキストをブロック要素の区切りを改行にして抜き出す
-function htmlBodyToText(doc) {
-  const body = doc.body;
+// root を渡すとその要素配下だけを対象にする（本文コンテナは分かるが中身の構造が読めないとき用）
+function htmlBodyToText(doc, root) {
+  const body = root || doc.body;
   if (!body) return '';
   body.querySelectorAll('script, style, noscript, svg, iframe, template').forEach(el => el.remove());
   const BLOCK = /^(P|DIV|SECTION|ARTICLE|MAIN|HEADER|FOOTER|NAV|ASIDE|H[1-6]|LI|UL|OL|TABLE|TR|BLOCKQUOTE|PRE|FIGURE|BR|HR|DT|DD)$/;
@@ -283,15 +321,35 @@ function htmlBodyToText(doc) {
 function webArchiveToBook(html, stem) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
 
-  const container = doc.getElementById('novel-text-container');
-  if (container) return novelPageToBook(doc, container);
+  // 新pixivはSPAなので WebResourceURL が最初に開いたページのURLになることがある。
+  // canonical のほうが実際に表示していた作品を正しく指す
+  const canonical = doc.querySelector('link[rel="canonical"]');
+  const pageUrl = canonical ? (canonical.getAttribute('href') || '') : '';
+
+  const container = doc.getElementById('novel-text-container')
+    || doc.querySelector('[class*="novel-text-container"]');
+
+  let structureMissed = false;
+  if (container) {
+    const res = novelPageToBook(doc, container);
+    if (res) {
+      if (pageUrl) res.url = pageUrl;
+      return res;
+    }
+    // 本文コンテナはあるのに段落・章が1つも読めない＝サイト側の構造変更の可能性
+    structureMissed = true;
+  }
 
   // 小説ページの構造が見つからない → テキストを抜いて自動整形（convert.js）へ
-  const text = htmlBodyToText(doc);
+  // 構造だけ読めなかった場合は本文コンテナ配下に絞って抜く（ナビや広告を巻き込まないため）
+  const text = htmlBodyToText(doc, structureMissed ? container : null);
   if (!text) return { error: 'このwebarchiveから本文を取り出せませんでした' };
   const pageTitle = (doc.title || '').trim();
   const res = convertText(text, pageTitle || stem);
-  res.warnings.unshift('小説ページの形式ではなかったため、本文を推定で取り込みました');
+  res.warnings.unshift(structureMissed
+    ? 'pixivの本文構造を認識できなかったため汎用抽出にフォールバックしました（サイト側の仕様変更かもしれません）'
+    : '小説ページの形式ではなかったため、本文を推定で取り込みました');
   res.rawText = text;
+  if (pageUrl) res.url = pageUrl;
   return res;
 }
