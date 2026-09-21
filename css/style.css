@@ -1452,3 +1452,38 @@ body.selecting #reader-wrap { padding-bottom: 96px; }   /* 下部バーに本棚
 }
 .toc-item:last-child { border-bottom: none; }
 .toc-item.active { font-weight: bold; background: var(--ui-active); }
+/* 長押し中（見出しの変更）のフィードバック */
+.toc-item.pressing { background: var(--ui-active); opacity: .7; }
+#toc-hint { flex-shrink: 0; margin-top: 2px; }
+
+/* ===== 章を分けるシート ===== */
+#split-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 110;
+}
+#split-inner {
+  width: 100%;
+  background: var(--ui-panel);
+  color: var(--ui-text);
+  border-radius: 16px 16px 0 0;
+  padding: 24px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.split-actions { display: flex; gap: 10px; }
+.split-actions button {
+  flex: 1;
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+#btn-split-cancel { background: none; border: 1px solid var(--ui-border); color: inherit; }
+#btn-split-ok { background: #5a8fd0; color: #fff; border: none; font-weight: bold; }
+#btn-split-ok:disabled { opacity: .4; cursor: default; }

@@ -12,7 +12,7 @@
 //   renameChapter(chapters, c, title)   → 新しい chapters
 //   remapAnchor(anchor, op)             → 付け替えた {ch, blk, ...}
 //
-// op: { type:'split', c, i, keepBlock } / { type:'merge', c, off }
+// op: { type:'split', c, i, keepBlock } / { type:'merge', c, off } / { type:'rename', c }
 // 入力の chapters・blocks・ブロックは一切書き換えない（新しい配列を返す）。
 
 function chapterOpError(msg) {
@@ -78,6 +78,8 @@ function renameChapter(chapters, c, title) {
 // blk を持たない（＝比率だけの旧い読書位置）ときは ch だけ付け替える。
 function remapAnchor(anchor, op) {
   if (!anchor || !op) return anchor;
+  // 改名は本文の並びを変えないので、アンカーは何も動かさない
+  if (op.type === 'rename') return { ...anchor };
   const out = { ...anchor };
   const ch = typeof out.ch === 'number' ? out.ch : 0;
   const hasBlk = typeof out.blk === 'number';

@@ -1600,32 +1600,87 @@ function pressMenuChapterMode(blk) {
   return isEffectiveStart(blocks, blk) ? 'merge' : 'split';
 }
 
-// 長押しメニューの「ここから新しい章」。押した段落を見出しに昇格させ、そこから後ろを新しい章にする
-async function splitChapterHere() {
+// ===== 章を分けるシート =====
+// 長押しメニューの「ここから新しい章」から開く。見出しの文言と
+// 「押した段落を見出しにするか（既定）／本文に残すか」をここで決める。
+let pendingSplit = null;      // { c, i, src }
+let splitTitleDirty = false;  // ユーザーが見出し欄を触ったか（トグルで初期値を入れ替えてよいかの判断）
+
+// 見出しの初期値。長い段落をそのまま見出しにしないよう先頭40文字で切る
+function splitTitleFrom(text) {
+  const t = (text || '').trim();
+  return t.length > 40 ? t.slice(0, 40) + '…' : t;
+}
+
+function syncSplitOk() {
+  document.getElementById('btn-split-ok').disabled =
+    !document.getElementById('split-title').value.trim();
+}
+
+function openSplitPanel(c, i, src) {
+  pendingSplit = { c, i, src };
+  splitTitleDirty = false;
+  document.getElementById('split-keep').checked = false;
+  document.getElementById('split-title').value = src;   // 既定＝段落を見出しに昇格
+  syncSplitOk();
+  document.getElementById('split-panel').classList.remove('hidden');
+}
+
+function closeSplitPanel() {
+  pendingSplit = null;
+  document.getElementById('split-panel').classList.add('hidden');
+}
+
+// 長押しメニューの「ここから新しい章」。判定だけしてシートを開く
+function splitChapterHere() {
   if (!pressBlockEl || !currentRecord || !book) return;
   const c = currentChapter;
   const i = +pressBlockEl.dataset.blk;
   const blocks = (book.chapters[c] && book.chapters[c].blocks) || [];
   if (isEffectiveStart(blocks, i)) { hidePressMenu(); showToast('章の先頭です'); return; }
-  const src = (blocks[i] && blocks[i].text) || '';
-  hidePressMenu();   // prompt の裏にメニューが残らないように先に畳む
+  const src = splitTitleFrom(blocks[i] && blocks[i].text);
+  hidePressMenu();   // シートの裏にメニューが残らないように先に畳む
+  openSplitPanel(c, i, src);
+}
 
-  const input = prompt('章の見出し', src);
-  if (input === null) return;              // キャンセル
-  const title = input.trim();
-  if (!title) return;                      // 空欄も中止（見出し無しの章は作らない）
+// トグル：本文に残すなら見出しは自分で書くので空、戻したら段落の文を入れ直す。
+// ただしユーザーが既に編集していたらその内容を尊重する
+document.getElementById('split-keep').addEventListener('change', e => {
+  if (!splitTitleDirty) {
+    document.getElementById('split-title').value =
+      e.target.checked ? '' : (pendingSplit ? pendingSplit.src : '');
+  }
+  syncSplitOk();
+});
+document.getElementById('split-title').addEventListener('input', () => {
+  splitTitleDirty = true;   // input は人が打ったときだけ飛ぶ（value 代入では飛ばない）
+  syncSplitOk();
+});
+
+document.getElementById('btn-split-cancel').addEventListener('click', closeSplitPanel);
+document.getElementById('split-panel').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSplitPanel();
+});
+
+document.getElementById('btn-split-ok').addEventListener('click', async () => {
+  if (!pendingSplit || !currentRecord || !book) return;
+  const { c, i } = pendingSplit;
+  const keepBlock = document.getElementById('split-keep').checked;
+  const title = document.getElementById('split-title').value.trim();
+  if (!title) return;                      // 見出し無しの章は作らない
+  closeSplitPanel();
 
   let next;
   try {
-    next = splitChapter(book.chapters, c, i, { title, keepBlock: false });
+    next = splitChapter(book.chapters, c, i, { title, keepBlock });
   } catch (err) {
     showToast(err.message || '章を分けられません');
     return;
   }
-  await applyChapterOp(currentRecord, next, { type: 'split', c, i, keepBlock: false });
+  await applyChapterOp(currentRecord, next, { type: 'split', c, i, keepBlock });
   renderChapter(c + 1);                    // 切り出した新しい章の先頭へ
   showToast('章を分けました');
-}
+});
 
 // 長押しメニューの「前の章と結合」。章の見出しは本文の段落に戻すので、同じ場所を長押しすれば章に戻せる
 async function mergeChapterHere() {
@@ -1653,6 +1708,34 @@ async function mergeChapterHere() {
   const len = ((next[c - 1] && next[c - 1].blocks) || []).length;
   renderChapter(c - 1, { blk: Math.min(joinAt, Math.max(0, len - 1)) });   // 戻した見出し段落の位置へ
   showToast('章を結合しました');
+}
+
+// 目次の章を長押し／右クリックで見出しを変更する。
+// 本文の並びは変わらないので remapAnchor は no-op だが、charCount は章タイトルを数えるので更新が要る
+async function renameChapterFromToc(i) {
+  if (!currentRecord || !book || !book.chapters[i]) return;
+  const cur = (book.chapters[i].title || '').trim();
+  const input = prompt('章の見出し', cur);
+  if (input === null) return;              // キャンセル
+  const title = input.trim();
+  if (!title || title === cur) return;     // 空欄・変化なしは中止
+
+  let next;
+  try {
+    next = renameChapter(book.chapters, i, title);
+  } catch (err) {
+    showToast(err.message || '見出しを変えられません');
+    return;
+  }
+  await applyChapterOp(currentRecord, next, { type: 'rename', c: i });   // 中で目次も描き直される
+  if (currentChapter === i) {
+    // 表示中の章なら、本文の見出しと章ナビの表示も直す
+    // （updateChapterNav は前後の話リンクを足し直してしまうので、必要な2箇所だけ触る）
+    const h = document.querySelector('#reader .chapter-title');
+    if (h) h.textContent = title;
+    document.getElementById('ch-title-nav').textContent = title;
+  }
+  showToast('見出しを変えました');
 }
 
 // ===== 長押しメニュー =====
@@ -1778,6 +1861,7 @@ document.getElementById('pm-split').addEventListener('click', () => {
 
 // ===== 目次パネル（目次｜しおり｜マーカー） =====
 let tocTab = 'toc';
+let tocLongPressed = false;   // 長押しで改名した直後の click 誤発火よけ
 
 document.querySelectorAll('.toc-tab').forEach(btn => {
   btn.addEventListener('click', () => { tocTab = btn.dataset.tab; renderTocPanel(); });
@@ -1808,15 +1892,40 @@ function renderTocPanel() {
   const list = document.getElementById('toc-list');
   list.innerHTML = '';
 
+  document.getElementById('toc-hint').classList.toggle('hidden', tocTab !== 'toc');
+
   if (tocTab === 'toc') {
     book.chapters.forEach((ch, i) => {
       const btn = document.createElement('button');
       btn.className = 'toc-item';
       btn.textContent = ch.title || `第${i + 1}章`;
       btn.addEventListener('click', () => {
+        if (tocLongPressed) { tocLongPressed = false; return; }   // 長押し直後の click は食う
         renderChapter(i);
         document.getElementById('toc-panel').classList.add('hidden');
       });
+
+      // 長押し（550ms・10px動いたらキャンセル）／右クリックで見出しの変更
+      let timer = null, sx = 0, sy = 0;
+      const cancel = () => { clearTimeout(timer); btn.classList.remove('pressing'); };
+      btn.addEventListener('touchstart', e => {
+        tocLongPressed = false;
+        sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+        btn.classList.add('pressing');
+        timer = setTimeout(() => {
+          btn.classList.remove('pressing');
+          tocLongPressed = true;
+          renameChapterFromToc(i);
+        }, 550);
+      }, { passive: true });
+      btn.addEventListener('touchmove', e => {
+        const dx = e.touches[0].clientX - sx, dy = e.touches[0].clientY - sy;
+        if (dx * dx + dy * dy > 100) cancel();
+      }, { passive: true });
+      btn.addEventListener('touchend', cancel);
+      btn.addEventListener('touchcancel', cancel);
+      btn.addEventListener('contextmenu', e => { e.preventDefault(); renameChapterFromToc(i); });
+
       list.appendChild(btn);
     });
     highlightToc();

@@ -140,6 +140,22 @@
     throws(() => renameChapter(sample(), 9, 'x'));
   });
 
+  t('remap/rename: アンカーは一切動かない（no-op）', () => {
+    const op = { type: 'rename', c: 1 };
+    const anchors = [
+      { ch: 0, blk: 0, at: 1 }, { ch: 1, blk: 3, at: 2 },
+      { ch: 2, blk: 0, at: 3 }, { ch: 1, ratio: 0.4 },
+    ];
+    anchors.forEach(a => eq(remapAnchor(a, op), a, JSON.stringify(a)));
+    const chapters = sample();
+    eq(remapAnchors([{ ch: 1, blk: 1, at: 9 }], op, chapters), [{ ch: 1, blk: 1, at: 9 }]);
+  });
+
+  t('remap: 知らない op でもアンカーを壊さない', () => {
+    eq(remapAnchor({ ch: 2, blk: 5, at: 1 }, { type: 'nope' }), { ch: 2, blk: 5, at: 1 });
+    eq(remapAnchor({ ch: 2, blk: 5 }, null), { ch: 2, blk: 5 });
+  });
+
   // ===== remapAnchor: split =====
 
   const SP = { type: 'split', c: 1, i: 3, keepBlock: false };
@@ -263,6 +279,33 @@
       { ch: 2, blk: 0, at: 4 },   // y3 は新章の 0 番
       { ch: 3, blk: 0, at: 5 },
     ]);
+  });
+
+  t('remapAnchors: keepBlock=true の split は 1ブロックも消えない', () => {
+    const chapters = [
+      { title: 'c0', blocks: [P('x0'), P('x1')] },
+      { title: 'c1', blocks: [P('y0'), P('y1'), P('y2'), P('y3')] },
+      { title: 'c2', blocks: [P('z0')] },
+    ];
+    const marks = [
+      { ch: 0, blk: 1, at: 1 }, { ch: 1, blk: 0, at: 2 }, { ch: 1, blk: 1, at: 3 },
+      { ch: 1, blk: 2, at: 4 }, { ch: 1, blk: 3, at: 5 }, { ch: 2, blk: 0, at: 6 },
+    ];
+    const next = splitChapter(chapters, 1, 2, { title: 'NEW', keepBlock: true });
+    eq(next.map(c => c.title), ['c0', 'c1', 'NEW', 'c2']);
+    eq(next[1].blocks, [P('y0'), P('y1')]);
+    eq(next[2].blocks, [P('y2'), P('y3')], '分割点のブロックは新章の先頭に残る');
+    eq(remapAnchors(marks, { type: 'split', c: 1, i: 2, keepBlock: true }, next), [
+      { ch: 0, blk: 1, at: 1 },
+      { ch: 1, blk: 0, at: 2 },
+      { ch: 1, blk: 1, at: 3 },
+      { ch: 2, blk: 0, at: 4 },   // y2 は新章の 0 番（消えない）
+      { ch: 2, blk: 1, at: 5 },   // y3 は新章の 1 番
+      { ch: 3, blk: 0, at: 6 },
+    ]);
+    // ブロックの総数が変わらない＝1つも消えていない
+    const total = cs => cs.reduce((s, ch) => s + ch.blocks.length, 0);
+    eq(total(next), total(chapters));
   });
 
   t('remapAnchors: 3章ぶんのしおりが merge で正しく寄る', () => {

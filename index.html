@@ -164,6 +164,7 @@
       <button class="toc-tab" data-tab="mk">マーカー</button>
     </div>
     <div id="toc-list"></div>
+    <p id="toc-hint" class="edit-hint">章を長押しすると見出しを変更できます</p>
     <button id="btn-to-shelf">‹ 本棚へ戻る</button>
   </div>
 </div>
@@ -229,6 +230,28 @@
     <button class="series-edit-item" id="se-remove">本をはずす…</button>
     <button class="series-edit-item danger" id="se-dissolve">シリーズを解散（本は消えません）</button>
     <button id="btn-series-edit-close">閉じる</button>
+  </div>
+</div>
+
+<!-- 章を分けるシート（本文の段落を長押し →「ここから新しい章」） -->
+<div id="split-panel" class="hidden">
+  <div id="split-inner">
+    <strong>章を分ける</strong>
+    <label class="edit-field">新しい章の見出し
+      <input type="text" id="split-title" placeholder="見出しを入力">
+    </label>
+    <div class="toggle-row">
+      <label for="split-keep">この段落を本文に残す</label>
+      <label class="switch">
+        <input type="checkbox" id="split-keep">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="edit-hint">オフのときは、長押しした段落そのものが新しい章の見出しになります</p>
+    <div class="split-actions">
+      <button id="btn-split-cancel">キャンセル</button>
+      <button id="btn-split-ok">分ける</button>
+    </div>
   </div>
 </div>
 
