@@ -59,10 +59,6 @@
       <div id="shelf-version" class="version-note"></div>
     </div>
     <div id="reader"></div>
-    <div id="press-menu" class="hidden">
-      <button id="pm-marker">マーカー</button>
-      <button id="pm-bookmark">しおり</button>
-    </div>
   </div>
 
   <div id="chapter-nav" class="hidden">
@@ -84,6 +80,15 @@
     </div>
   </div>
 
+</div>
+
+<!-- 長押しメニュー（本文の段落を長押し／右クリックで出る）
+     #reader-wrap の外に置く： 中に入れると縦書きの writing-mode を継いでボタンが縦積みになり、
+     スクロール容器の scrollLeft（縦書きでは負方向）で座標計算も破綻するため -->
+<div id="press-menu" class="hidden">
+  <button id="pm-marker">マーカー</button>
+  <button id="pm-bookmark">しおり</button>
+  <button id="pm-split">ここから新しい章</button>
 </div>
 
 <!-- 設定パネル -->
@@ -260,6 +265,7 @@
 
 <script src="./js/version.js"></script>
 <script src="./js/convert.js"></script>
+<script src="./js/chapters.js"></script>
 <script src="./js/webarchive.js"></script>
 <script src="./js/app.js"></script>
 </body>

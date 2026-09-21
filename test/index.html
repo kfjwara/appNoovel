@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>convert.js テスト</title>
+<title>Noovel テスト</title>
 <style>
   body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #ddd; }
   .ok { color: #7ec97e; }
@@ -10,12 +10,14 @@
 </style>
 </head>
 <body>
-<h1>convert.js テスト</h1>
+<h1>Noovel テスト</h1>
 <div id="out">実行中…</div>
 <script src="../js/convert.js"></script>
+<script src="../js/chapters.js"></script>
 <script src="./convert.test.js"></script>
+<script src="./chapters.test.js"></script>
 <script>
-  const results = window.CONVERT_TEST_RESULTS || [];
+  const results = (window.CONVERT_TEST_RESULTS || []).concat(window.CHAPTERS_TEST_RESULTS || []);
   const failed = results.filter(r => !r.ok);
   document.getElementById('out').innerHTML =
     results.map(r =>

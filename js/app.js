@@ -1557,6 +1557,104 @@ function applyMarkClasses() {
   });
 }
 
+// ===== 章の手動編集（分割・結合・改名） =====
+// 章を作り替える純関数とアンカーの付け替えは js/chapters.js。ここは永続化と画面反映だけ。
+// op は remapAnchor に渡すものと同じ: {type:'split', c, i, keepBlock} / {type:'merge', c, off}
+// 戻り値＝付け替え後に読者が居る章番号（開いていない本なら null）
+async function applyChapterOp(rec, newChapters, op) {
+  if (!rec || !rec.noovel || !Array.isArray(newChapters) || !newChapters.length) return null;
+  rec.noovel.chapters = newChapters;
+  if (Array.isArray(rec.bookmarks)) rec.bookmarks = remapAnchors(rec.bookmarks, op, newChapters);
+  if (Array.isArray(rec.markers)) rec.markers = remapAnchors(rec.markers, op, newChapters);
+  rec.chapterCount = newChapters.length;           // 本棚の読了%（bookProgress）がこれで割る
+  rec.charCount = bookCharCount(rec.noovel);       // 見出しも文字数に数えているので取り直す
+  rec.charCountV = CHARCOUNT_V;
+  rec.chaptersEdited = true;                       // 将来「自動推定をやり直す」を足すときの安全弁
+
+  // 読書位置は IndexedDB ではなく localStorage 側。キー名が chapter / ch で違うだけで規則は同じ
+  const key = 'bm_' + rec.id;
+  try {
+    const bm = JSON.parse(localStorage.getItem(key) || 'null');
+    if (bm) {
+      const a = clampAnchor(newChapters, remapAnchor({ ch: bm.chapter || 0, blk: bm.blk }, op));
+      bm.chapter = a.ch;
+      if (typeof a.blk === 'number') bm.blk = a.blk;
+      localStorage.setItem(key, JSON.stringify(bm));
+    }
+  } catch (e) {}
+
+  await dbPut(rec).catch(err => console.error('chapter op save failed', err));
+
+  // 開いている本なら画面にも反映（book は rec.noovel と同じオブジェクトなので chapters は差し替え済み）
+  if (currentRecord !== rec && currentFile !== rec.id) return null;
+  book = rec.noovel;
+  if (!document.getElementById('toc-panel').classList.contains('hidden')) renderTocPanel();
+  return clampAnchor(newChapters, remapAnchor({ ch: currentChapter }, op)).ch;
+}
+
+// 長押しメニューの主ボタンは、押した位置で意味が入れ替わる。
+// 章の実質的な先頭＝そこでは分けようがないので「前の章と結合」、それ以外は「ここから新しい章」
+function pressMenuChapterMode(blk) {
+  if (!book) return 'split';
+  const blocks = (book.chapters[currentChapter] && book.chapters[currentChapter].blocks) || [];
+  return isEffectiveStart(blocks, blk) ? 'merge' : 'split';
+}
+
+// 長押しメニューの「ここから新しい章」。押した段落を見出しに昇格させ、そこから後ろを新しい章にする
+async function splitChapterHere() {
+  if (!pressBlockEl || !currentRecord || !book) return;
+  const c = currentChapter;
+  const i = +pressBlockEl.dataset.blk;
+  const blocks = (book.chapters[c] && book.chapters[c].blocks) || [];
+  if (isEffectiveStart(blocks, i)) { hidePressMenu(); showToast('章の先頭です'); return; }
+  const src = (blocks[i] && blocks[i].text) || '';
+  hidePressMenu();   // prompt の裏にメニューが残らないように先に畳む
+
+  const input = prompt('章の見出し', src);
+  if (input === null) return;              // キャンセル
+  const title = input.trim();
+  if (!title) return;                      // 空欄も中止（見出し無しの章は作らない）
+
+  let next;
+  try {
+    next = splitChapter(book.chapters, c, i, { title, keepBlock: false });
+  } catch (err) {
+    showToast(err.message || '章を分けられません');
+    return;
+  }
+  await applyChapterOp(currentRecord, next, { type: 'split', c, i, keepBlock: false });
+  renderChapter(c + 1);                    // 切り出した新しい章の先頭へ
+  showToast('章を分けました');
+}
+
+// 長押しメニューの「前の章と結合」。章の見出しは本文の段落に戻すので、同じ場所を長押しすれば章に戻せる
+async function mergeChapterHere() {
+  if (!pressBlockEl || !currentRecord || !book) return;
+  const c = currentChapter;
+  if (c === 0) { hidePressMenu(); showToast('最初の章です'); return; }
+  const title = (book.chapters[c].title || '').trim();
+  const joinAt = (book.chapters[c - 1].blocks || []).length;   // 継ぎ目＝結合後に見出しが戻る位置
+  hidePressMenu();   // confirm の裏にメニューが残らないように先に畳む
+
+  const msg = title
+    ? `「${title}」を前の章と結合します。見出しは本文の段落として残ります。`
+    : 'この章を前の章と結合します。';
+  if (!confirm(msg)) return;
+
+  let next, off;
+  try {
+    off = mergeOffset(book.chapters, c, { restoreTitle: true });
+    next = mergeChapter(book.chapters, c, { restoreTitle: true });
+  } catch (err) {
+    showToast(err.message || '章を結合できません');
+    return;
+  }
+  await applyChapterOp(currentRecord, next, { type: 'merge', c, off });
+  const len = ((next[c - 1] && next[c - 1].blocks) || []).length;
+  renderChapter(c - 1, { blk: Math.min(joinAt, Math.max(0, len - 1)) });   // 戻した見出し段落の位置へ
+  showToast('章を結合しました');
+}
+
 // ===== 長押しメニュー =====
 let pressTimer = null;
 let pressStart = null;
@@ -1568,25 +1666,48 @@ function hidePressMenu() {
   if (pressBlockEl) { pressBlockEl.classList.remove('pressing'); pressBlockEl = null; }
 }
 
-function showPressMenu(el) {
+// el = 対象の段落要素、point = 押した画面座標 {x, y}（省略可）。
+// メニューは #reader-wrap の外にある fixed 要素なので、座標はすべて画面座標で扱う
+// （scrollTop/scrollLeft は使わない。縦書きでは scrollLeft が負方向に進むため）
+function showPressMenu(el, point) {
   if (!currentRecord) return;
   pressBlockEl = el;
   el.classList.add('pressing');
   const blk = +el.dataset.blk;
   document.getElementById('pm-marker').textContent = hasMark('markers', currentChapter, blk) ? 'マーカー解除' : 'マーカー';
   document.getElementById('pm-bookmark').textContent = hasMark('bookmarks', currentChapter, blk) ? 'しおりを外す' : 'しおり';
+  // 主ボタンは押した位置で「分割」と「結合」が入れ替わる（幅が変わるので、下のクランプより前に決める）
+  const mode = pressMenuChapterMode(blk);
+  const sp = document.getElementById('pm-split');
+  sp.textContent = mode === 'merge' ? '前の章と結合' : 'ここから新しい章';
+  sp.disabled = mode === 'merge' && currentChapter === 0;   // 最初の章には結合先が無い
 
   const menu = document.getElementById('press-menu');
-  menu.classList.remove('hidden');
-  const wrap = document.getElementById('reader-wrap');
-  const wrapRect = wrap.getBoundingClientRect();
+  menu.classList.remove('hidden');   // 大きさを測るため先に出す
+  const wrapRect = document.getElementById('reader-wrap').getBoundingClientRect();
   const r = el.getBoundingClientRect();
-  const top = r.top - wrapRect.top + wrap.scrollTop - menu.offsetHeight - 10;
-  let left = r.left - wrapRect.left + wrap.scrollLeft + r.width / 2;
+  const mh = menu.offsetHeight;
   const half = menu.offsetWidth / 2;
-  left = Math.max(half + 6, Math.min(left, wrapRect.width - half - 6 + wrap.scrollLeft));
-  menu.style.top = Math.max(top, wrap.scrollTop + 6) + 'px';
-  menu.style.left = left + 'px';
+
+  // x は常に段落（縦書きなら列）の中央。CSS の translateX(-50%) 前提の中央座標
+  const x = r.left + r.width / 2;
+  let y;
+  if (isVerticalMode()) {
+    // 縦書きの段落は縦長の列なので「段落の上」に意味がない。押した点の高さに合わせる
+    const py = point ? point.y : wrapRect.top + wrapRect.height / 2;
+    y = py - mh - 10;
+    if (y < wrapRect.top + 6) y = py + 10;
+  } else {
+    y = r.top - mh - 10;                          // 通常は段落の上
+    if (y < wrapRect.top + 6) y = r.bottom + 10;  // 上に入らなければ段落の下
+  }
+  // 下にも入らなければ上端に貼り付ける
+  if (y + mh > wrapRect.bottom - 6) y = wrapRect.bottom - 6 - mh;
+  y = Math.max(wrapRect.top + 6, y);
+
+  menu.style.top = y + 'px';
+  menu.style.left = Math.max(wrapRect.left + half + 6,
+                             Math.min(x, wrapRect.right - half - 6)) + 'px';
 }
 
 // ===== 全画面読書：画面タップでヘッダー・章ナビを出し入れ =====
@@ -1614,7 +1735,8 @@ window.addEventListener('resize', updateHeaderHeight);
     if (Date.now() - t0 > 350) return;                              // 長押しはマーカー操作
     if (Math.hypot(e.clientX - x0, e.clientY - y0) > 10) return;    // 指が動いた＝スクロール
     if (wrap.scrollTop !== sT || wrap.scrollLeft !== sL) return;    // 慣性スクロールの停止タップ
-    if (e.target.closest('#press-menu, .episode-link')) return;     // メニュー・前後の話カードの操作
+    // 前後の話カードの操作（長押しメニューは #reader-wrap の外なのでそもそもここへ来ない。念のため残す）
+    if (e.target.closest('#press-menu, .episode-link')) return;
     if (pressBlockEl) return;                                       // メニュー表示中＝このタップは閉じる係
     document.body.classList.toggle('ui-hidden');
   });
@@ -1624,9 +1746,10 @@ const readerEl = document.getElementById('reader');
 readerEl.addEventListener('touchstart', e => {
   const el = e.target.closest('p[data-blk], h3[data-blk]');
   if (!el) return;
-  pressStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  const pt = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  pressStart = pt;   // touchend で null にされるので、タイマーには控えを渡す
   clearTimeout(pressTimer);
-  pressTimer = setTimeout(() => showPressMenu(el), 500);
+  pressTimer = setTimeout(() => showPressMenu(el, pt), 500);
 }, { passive: true });
 readerEl.addEventListener('touchmove', e => {
   if (!pressStart) return;
@@ -1640,13 +1763,18 @@ readerEl.addEventListener('contextmenu', e => {
   const el = e.target.closest('p[data-blk], h3[data-blk]');
   if (!el) return;
   e.preventDefault();
-  showPressMenu(el);
+  showPressMenu(el, { x: e.clientX, y: e.clientY });
 });
 document.addEventListener('click', e => {
   if (pressBlockEl && !e.target.closest('#press-menu')) hidePressMenu();
 });
 document.getElementById('pm-marker').addEventListener('click', () => toggleMark('markers'));
 document.getElementById('pm-bookmark').addEventListener('click', () => toggleMark('bookmarks'));
+document.getElementById('pm-split').addEventListener('click', () => {
+  if (!pressBlockEl) return;
+  if (pressMenuChapterMode(+pressBlockEl.dataset.blk) === 'merge') mergeChapterHere();
+  else splitChapterHere();
+});
 
 // ===== 目次パネル（目次｜しおり｜マーカー） =====
 let tocTab = 'toc';

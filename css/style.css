@@ -243,6 +243,8 @@ body.reading #reader-wrap {
 #reader {
   max-width: 680px;
   margin: 0 auto;
+  /* 本文末尾の余白。縦書きでは左端に効く（論理プロパティ） */
+  padding-block-end: 80px;
   font-family: var(--font-family);
   font-size: var(--font-size);
   line-height: var(--line-height);
@@ -304,14 +306,17 @@ body.reading #reader-wrap {
 [data-blk].pressing { background: rgba(0,0,0,.06); border-radius: 6px; }
 body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
 
+/* 長押しメニュー。#reader-wrap の外＝画面座標で置く（app.js の showPressMenu が top/left を入れる）。
+   z-index はヘッダー・章ナビ(60)・進捗バー(70)より上、ボトムシート(100〜)より下 */
 #press-menu {
-  position: absolute;
+  position: fixed;
+  writing-mode: horizontal-tb;   /* 縦書き読書中でもメニューだけは横組み */
   transform: translateX(-50%);
   background: #2f2b24;
   border-radius: 10px;
   display: flex;
   box-shadow: 0 6px 18px rgba(0,0,0,.35);
-  z-index: 50;
+  z-index: 80;
 }
 #press-menu button {
   background: none;
@@ -322,8 +327,11 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   cursor: pointer;
   white-space: nowrap;
   font-family: -apple-system, 'Hiragino Sans', sans-serif;
+  touch-action: manipulation;   /* iOSのダブルタップ拡大待ち（300ms遅延）を出さない */
 }
 #press-menu button + button { border-left: 1px solid rgba(245,240,232,.18); }
+/* 章の先頭など、その場では分割できないとき */
+#press-menu button:disabled { opacity: .35; cursor: default; }
 
 .section-title {
   font-size: calc(var(--font-size) * 1.02);
