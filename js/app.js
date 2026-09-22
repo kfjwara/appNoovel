@@ -247,14 +247,62 @@ function importContent(raw, name, encWarning, quiet) {
   return finishImport(res, name, raw, quiet);
 }
 
-// Safariで保存した .webarchive（Webページの丸ごと保存）の取り込み
-// 失敗は throw で呼び出し側（file-input ハンドラ）に伝える
+// Uint8Array（plistの中のdata）→ そのぶんだけを切り出した ArrayBuffer
+function bytesToArrayBuffer(u8) {
+  if (!u8) return new ArrayBuffer(0);
+  if (u8 instanceof ArrayBuffer) return u8;
+  return u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
+}
+
+// Safariで保存した .webarchive（Webページの丸ごと保存）の取り込み。
+// 中身はHTMLとは限らない（PDFを開いた状態・画像を開いた状態でも保存できてしまう）ので、
+// 主リソースのMIMEで行き先を振り分ける。失敗は throw で呼び出し側（file-inputハンドラ）へ。
 async function importWebarchive(file, quiet) {
   const buf = await file.arrayBuffer();
-  const { html } = parseWebArchive(buf);
-  const res = webArchiveToBook(html, file.name.replace(/\.[^.]+$/, ''));
-  if (res.error) throw new Error(res.error);
-  return finishImport(res, file.name, res.rawText || '', quiet);
+  const arc = parseWebArchive(buf);        // 形式を見分けられなければここで throw
+  const stem = file.name.replace(/\.[^.]+$/, '');
+  const mime = arc.mime || '';
+
+  // 経路そのものについての但し書き（本文の警告より前に出す）
+  const notes = [];
+  if (arc.format === 'html') notes.push('webarchiveではなくHTMLファイルとして取り込みました');
+  else if (arc.format === 'xml') notes.push('XML形式のwebarchiveとして取り込みました');
+  if (arc.refixed) notes.push(`文字コードが宣言と違ったため ${arc.enc} として読み直しました`);
+  else if (arc.enc && arc.enc !== 'utf-8') notes.push(`文字コードを ${arc.enc} として読み込みました`);
+
+  // HTML（MIMEが空のときも、Safariの主リソースはHTMLなのでHTMLとして扱う）
+  if (!mime || /^(text\/html|application\/xhtml\+xml)$/.test(mime)) {
+    const res = webArchiveToBook(arc.html, stem, arc);
+    if (res.error) throw new Error(res.error);
+    res.warnings = notes.concat(res.warnings);
+    return finishImport(res, file.name, res.rawText || '', quiet);
+  }
+
+  // PDFを開いた状態で保存したwebarchive
+  if (mime === 'application/pdf') {
+    const { text, numPages } = await pdfBufferToText(bytesToArrayBuffer(arc.data));
+    if (!text.trim()) {
+      throw new Error('中身はPDFでしたが、テキストを取り出せませんでした（スキャン画像PDFの可能性があります）');
+    }
+    return importContent(text, file.name,
+      [...notes, `webarchiveの中身はPDFでした（${numPages}ページ）。段落・章立ては推定です`].join(' / '), quiet);
+  }
+
+  // プレーンテキスト等
+  if (/^text\//.test(mime)) {
+    const { text, enc } = decodeBuffer(bytesToArrayBuffer(arc.data));
+    if (!text.trim()) throw new Error(`webarchiveの中身（${mime}）は空でした`);
+    const note = [...notes, `webarchiveの中身は${mime}でした`];
+    if (enc === 'shift_jis' && !notes.some(n => /shift_jis/i.test(n))) {
+      note.push('文字コードをShift_JISとして読み込みました');
+    }
+    return importContent(text, file.name, note.join(' / '), quiet);
+  }
+
+  if (/^image\//.test(mime)) {
+    throw new Error(`画像（${mime}）を保存したwebarchiveです。小説のページ本体を開いた状態で保存してください`);
+  }
+  throw new Error(`対応していない種類（${mime || '不明'}）のwebarchiveです。小説のページを開いた状態で保存し直してください`);
 }
 
 // ===== Scroll axis helpers（縦書き=横スクロールに対応） =====
@@ -2195,11 +2243,10 @@ function loadPdfjs() {
   return pdfjsLoader;
 }
 
-// 失敗は throw で呼び出し側（file-input ハンドラ）に伝える
-async function importPdf(file, quiet) {
+// PDFのバイト列 → 本文テキスト。.pdf ファイルと、中身がPDFの .webarchive の両方から呼ぶ
+async function pdfBufferToText(buf) {
   const pdfjs = await loadPdfjs();
   pdfjs.GlobalWorkerOptions.workerSrc = './js/pdfjs/pdf.worker.min.js';
-  const buf = await file.arrayBuffer();
   const doc = await pdfjs.getDocument({ data: buf }).promise;
   const numPages = doc.numPages;
   const pages = [];
@@ -2210,7 +2257,12 @@ async function importPdf(file, quiet) {
     page.cleanup();
   }
   doc.destroy();
-  const text = pdfPagesToText(pages);
+  return { text: pdfPagesToText(pages), numPages };
+}
+
+// 失敗は throw で呼び出し側（file-input ハンドラ）に伝える
+async function importPdf(file, quiet) {
+  const { text, numPages } = await pdfBufferToText(await file.arrayBuffer());
   if (!text.trim()) throw new Error('テキストを取り出せませんでした（スキャン画像PDFの可能性があります）');
   return importContent(text, file.name, `PDFから抽出しました（${numPages}ページ）。段落・章立ては推定です`, quiet);
 }
