@@ -124,7 +124,11 @@ function parseWebArchive(arrayBuffer) {
 
 // --- HTML → book ---
 
-// <ruby>漢字<rt>かな</rt></ruby> → 漢字（かな）
+// <ruby>漢字<rt>かな</rt></ruby> → ｜漢字《かな》（青空文庫式のルビ記法。描画は app.js の renderInline）
+// pixivの新マークアップは
+//   <ruby class="style_novel-ruby__…"><rb><span…>親</span></rb><rp>(</rp><rt><span…>読み</span></rt><rp>)</rp></ruby>
+// と rb/rt の中に span がネストするので、タグ構造ではなく textContent で親文字と読みを取る。
+// rp（ルビ非対応ブラウザ用のカッコ）は捨てる。
 function rubyToText(ruby) {
   let base = '';
   let rt = '';
@@ -140,7 +144,27 @@ function rubyToText(ruby) {
   });
   base = base.trim();
   rt = rt.trim();
-  return rt ? base + '（' + rt + '）' : base;
+  if (!rt) return base;    // 読みが空ならルビにしない
+  if (!base) return rt;    // 親文字が無いルビは記法に書けないので読みだけ残す
+  // 記法に使う文字が中身に入っていると読み直せなくなる（極めて稀）。その時だけ従来の平文に逃がす
+  if (/[｜《》]/.test(base) || /[｜《》]/.test(rt)) return base + '（' + rt + '）';
+  return '｜' + base + '《' + rt + '》';
+}
+
+// 要素の中身を「ルビ記法つきのテキスト」にする。
+// textContent だとルビの親文字と読みが繋がって読めなくなる場所（章見出しなど）で使う
+function inlineText(el) {
+  let out = '';
+  const walk = node => {
+    node.childNodes.forEach(ch => {
+      if (ch.nodeType === Node.TEXT_NODE) { out += ch.nodeValue; return; }
+      if (ch.nodeType !== Node.ELEMENT_NODE) return;
+      if (ch.tagName === 'RUBY') { out += rubyToText(ch); return; }
+      walk(ch);
+    });
+  };
+  walk(el);
+  return out;
 }
 
 // pixivがNext.js（CSS Modules）に移行し、本文のクラス名が
@@ -169,7 +193,7 @@ function novelPageLines(container) {
     const isNewline = hasCls(el, 'novel-newline');
     if (!isChapter && !isNewline && !hasCls(el, 'novel-paragraph')) return;
     if (isChapter) {
-      lines.push({ kind: 'chapter', text: el.textContent.trim() });
+      lines.push({ kind: 'chapter', text: inlineText(el).trim() });   // 見出しのルビも記法で残す
       return;
     }
     if (isNewline) {

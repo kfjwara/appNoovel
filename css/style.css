@@ -280,6 +280,32 @@ body.reading #reader-wrap {
 .para + .para { margin-top: .55em; }
 .para.no-indent { text-indent: 0; }
 
+/* ===== ルビ・傍点 =====
+   本文は「｜親文字《読み》」で持ち、app.js の renderInline が <ruby>／.emph に組む。
+   縦書き（#reader-wrap.vertical）では writing-mode に従ってルビは右側、傍点も右側に出る。 */
+ruby { ruby-align: center; }
+rt {
+  font-size: .5em;
+  font-weight: normal;
+  line-height: 1.2;
+  text-indent: 0;          /* .para の字下げを注記へ持ち込まない */
+  letter-spacing: 0;
+  opacity: .8;
+  -webkit-user-select: none;   /* 長押しはあくまで段落の操作。読みだけ選択されないように */
+  user-select: none;
+}
+/* 傍点（読みが圏点だけのルビ）。文字列には点を混ぜず CSS で打つ */
+.emph {
+  -webkit-text-emphasis-style: filled sesame;
+  text-emphasis-style: filled sesame;
+  -webkit-text-emphasis-position: over right;   /* 横書き＝上／縦書き＝右 */
+  text-emphasis-position: over right;
+}
+.emph.emph-open {
+  -webkit-text-emphasis-style: open sesame;
+  text-emphasis-style: open sesame;
+}
+
 /* ===== マーカー・しおり・長押し ===== */
 .para.marked > span {
   background: var(--marker-c);

@@ -8,8 +8,11 @@
   const isNode = typeof module !== 'undefined' && typeof require === 'function';
   const api = isNode
     ? require('../js/convert.js')
-    : { convertText: global.convertText, parseNoovelJSON: global.parseNoovelJSON, pdfPagesToText: global.pdfPagesToText };
-  const { convertText, parseNoovelJSON, pdfPagesToText } = api;
+    : {
+        convertText: global.convertText, parseNoovelJSON: global.parseNoovelJSON,
+        pdfPagesToText: global.pdfPagesToText, stripRuby: global.stripRuby,
+      };
+  const { convertText, parseNoovelJSON, pdfPagesToText, stripRuby } = api;
 
   const results = [];
   function t(name, fn) {
@@ -22,6 +25,38 @@
     if (jg !== jw) throw new Error((msg || '値が違う') + ' expected=' + jw + ' got=' + jg);
   }
   function ok(v, msg) { if (!v) throw new Error(msg || '真であるべき値がfalsy'); }
+
+  // ===== stripRuby（ルビ記法を剥がす） =====
+
+  t('ルビ記法を剥がすと親文字だけ残る', () => {
+    eq(stripRuby('｜今日《こんにち》の日本'), '今日の日本');
+  });
+
+  t('1行に複数のルビがあっても全部剥がれる', () => {
+    eq(stripRuby('｜師匠《せんせい》と｜老大《ボス》'), '師匠と老大');
+  });
+
+  t('｜の無い《…》はルビではないのでそのまま残る', () => {
+    eq(stripRuby('《ファイアボール》を唱えた'), '《ファイアボール》を唱えた');
+    eq(stripRuby('スキル《鑑定》と｜魔力《マナ》'), 'スキル《鑑定》と魔力');
+  });
+
+  t('閉じ忘れ・空の読み・｜だけは壊れない', () => {
+    eq(stripRuby('｜親《読み'), '｜親《読み', '》が無ければ記法にしない');
+    eq(stripRuby('｜親《》'), '親', '読みが空でも親文字は残す');
+    eq(stripRuby('｜《読み》'), '｜《読み》', '親文字が無ければ記法にしない');
+    eq(stripRuby('｜'), '｜');
+    eq(stripRuby(''), '');
+    eq(stripRuby(null), '');
+  });
+
+  t('傍点（圏点だけの読み）も記法としては同じで剥がれる', () => {
+    eq(stripRuby('これは｜絶対《﹅﹅》に許さない'), 'これは絶対に許さない');
+  });
+
+  t('ルビは連続していても1つずつ剥がれる', () => {
+    eq(stripRuby('｜天《てん》｜獄《ごく》'), '天獄');
+  });
 
   // ===== convertText =====
 
@@ -60,6 +95,29 @@
     eq(book.chapters[0].title, 'ある日');
     eq(book.chapters[1].title, '夜');
     ok(warnings.some(w => w.includes('推定')), '推定の警告が出ること');
+  });
+
+  t('ルビ記法は本文にそのまま残り、章分割を邪魔しない', () => {
+    const { book } = convertText(
+      '第一章　｜天獄《てんごく》\n｜今日《こんにち》の日本人は。\n\n第二章　終わり\n本文二。', 'stem');
+    eq(book.chapters.length, 2);
+    eq(book.chapters[0].title, '第一章　｜天獄《てんごく》');
+    eq(book.chapters[0].blocks, [{ t: 'p', text: '｜今日《こんにち》の日本人は。' }]);
+  });
+
+  t('見出しの長さ判定はルビを剥がした長さで見る', () => {
+    // 記法つきだと49字（>40で本文降格）だが、親文字だけなら32字なので見出しのまま
+    const head = '【｜' + 'あ'.repeat(30) + '《' + 'よ'.repeat(14) + '》】';
+    ok(head.length > 40 && head.replace(/｜([^｜《》]+)《([^《》]*)》/g, '$1').length <= 40, '前提');
+    const { book } = convertText(head + '\n本文一。\n\n【第二】\n本文二。', 'stem');
+    eq(book.chapters.length, 2);
+    eq(book.chapters[0].title, head);
+  });
+
+  t('記号なしの短行の章推定もルビを剥がした長さで見る', () => {
+    const { book } = convertText(
+      '｜朝《あさ》\n\n朝の話。これは本文です。\n\n｜夜《よる》\n\n夜の話。これも本文です。\nおわり。', 'stem');
+    eq(book.chapters.map(c => c.title), ['｜朝《あさ》', '｜夜《よる》']);
   });
 
   t('タブ区切りは表になる', () => {

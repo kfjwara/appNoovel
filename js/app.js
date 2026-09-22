@@ -134,7 +134,7 @@ function decodeBuffer(buf) {
   catch (e) { return { text: new TextDecoder('shift_jis').decode(buf), enc: 'shift_jis' }; }
 }
 
-const CHARCOUNT_V = 2;   // 文字数の数え方を変えたら上げる（保存済みの値を一度だけ作り直させる）
+const CHARCOUNT_V = 3;   // 文字数の数え方を変えたら上げる（保存済みの値を一度だけ作り直させる）
 
 // 文字数の表示用フォーマット: 400文字 / 4,000文字 / 4.12万文字（末尾ゼロは省く: 4万文字）
 function formatCharCount(n) {
@@ -144,15 +144,17 @@ function formatCharCount(n) {
 }
 
 // 本文の総文字数（段落・見出し・表のセル・章タイトルを合算）
-// 章タイトルも数えるのは、取り込みの章推定で本文の短い行が章タイトル側に入ることがあるため
+// 章タイトルも数えるのは、取り込みの章推定で本文の短い行が章タイトル側に入ることがあるため。
+// ルビは親文字だけ数える（読み＝ふりがなは本文の量ではない）。stripRuby は js/convert.js
 function bookCharCount(bk) {
   let n = 0;
+  const len = s => stripRuby(s).length;
   (bk.chapters || []).forEach(ch => {
-    if (ch.title) n += ch.title.length;
-    if (typeof ch.text === 'string') n += ch.text.length;   // 簡易形（ch.text）への防御
+    if (ch.title) n += len(ch.title);
+    if (typeof ch.text === 'string') n += len(ch.text);   // 簡易形（ch.text）への防御
     (ch.blocks || []).forEach(b => {
-      if (b.text) n += b.text.length;
-      else if (b.rows) b.rows.forEach(row => row.forEach(cell => { n += cell.length; }));
+      if (b.text) n += len(b.text);
+      else if (b.rows) b.rows.forEach(row => row.forEach(cell => { n += len(cell); }));
     });
   });
   return n;
@@ -165,16 +167,18 @@ function zenToHan(s) {
 }
 
 // 話数：先頭の #N を優先。なければ末尾の数字（全角可・【前編】等のカッコ書きは無視）
+// ルビ記法は先に剥がす（《よみ》が末尾に来ると数字の見え方が変わるため）
 function detectEpisode(title) {
-  let m = title.match(/^#\s*(\d+)/);
+  const src = stripRuby(title);
+  let m = src.match(/^#\s*(\d+)/);
   if (m) return +m[1];
-  m = zenToHan(title).replace(/[（(【\[].*?[】\])）]\s*$/, '').match(/(\d+)\s*$/);
+  m = zenToHan(src).replace(/[（(【\[].*?[】\])）]\s*$/, '').match(/(\d+)\s*$/);
   return m ? +m[1] : null;
 }
 
-// シリーズ名：#N と末尾の巻数・前後編表記を削った残り
+// シリーズ名：#N と末尾の巻数・前後編表記を削った残り（記法は剥がして素の名前にする）
 function detectSeriesName(title) {
-  let t = title.replace(/^#\s*\d+\s*/, '');
+  let t = stripRuby(title).replace(/^#\s*\d+\s*/, '');
   t = t.replace(/[　\s]*[（(【]?(前|中|後)編[）)】]?[　\s]*$/, '');
   t = t.replace(/[　\s]*[（(]?[0-9０-９]+[）)]?[　\s]*$/, '').trim();
   return t || null;
@@ -328,6 +332,53 @@ document.getElementById('reader-wrap').addEventListener('scroll', () => {
   scrollTimer = setTimeout(saveBookmark, 500);
 });
 
+// ===== ルビ・傍点の描画 =====
+// 本文は「｜親文字《読み》」の平文（青空文庫式）で持ち、描画のときだけ組む。
+// ・普通の読み  → <ruby>親<rt>読み</rt></ruby>（rpは不要。ルビ非対応ブラウザはもう無い）
+// ・読みが圏点だけ（﹅ ・ ● ○ 等）→ 傍点なので <span class="emph">。CSS の text-emphasis で
+//   点を打つと、縦書きでは自動で右側に付き、コピーしても点が文字列に混ざらない。
+// 記法に合わない ｜ や 《…》 はそのままテキストとして残す（pixivの《スキル名》強調を壊さない）。
+const EMPH_OPEN_RE = /^[﹆○◦◎〇]+$/;                 // 白ゴマ・白丸だけの読み
+const EMPH_RE      = /^[﹅﹆・･●◉○◦◎〇]+$/;          // 圏点だけで出来た読み＝傍点
+
+function renderInline(text) {
+  const frag = document.createDocumentFragment();
+  const s = text == null ? '' : String(text);
+  if (!s) return frag;
+  const re = new RegExp(RUBY_RE.source, 'g');   // lastIndex を共有しないよう毎回作る
+  let last = 0;
+  let m;
+  while ((m = re.exec(s)) !== null) {
+    if (m.index > last) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
+    const base = m[1];
+    const yomi = m[2];
+    if (!yomi) {
+      frag.appendChild(document.createTextNode(base));      // 読みが空＝親文字だけ
+    } else if (EMPH_RE.test(yomi)) {
+      const em = document.createElement('span');
+      em.className = 'emph' + (EMPH_OPEN_RE.test(yomi) ? ' emph-open' : '');
+      em.textContent = base;
+      frag.appendChild(em);
+    } else {
+      const ruby = document.createElement('ruby');
+      ruby.appendChild(document.createTextNode(base));
+      const rt = document.createElement('rt');
+      rt.textContent = yomi;
+      ruby.appendChild(rt);
+      frag.appendChild(ruby);
+    }
+    last = re.lastIndex;
+  }
+  if (last < s.length) frag.appendChild(document.createTextNode(s.slice(last)));
+  return frag;
+}
+
+// 要素の中身を renderInline で入れ替える（textContent = ... のルビ版）
+function setInline(el, text) {
+  el.textContent = '';
+  el.appendChild(renderInline(text));
+}
+
 // ===== Render chapter =====
 // pos: { blk?: number, ratio?: number } — blk（段落アンカー）優先、ratioは旧データ互換
 function renderChapter(idx, pos = {}) {
@@ -342,7 +393,7 @@ function renderChapter(idx, pos = {}) {
   if (ch.title && book.chapters.length > 1) {
     const h = document.createElement('h2');
     h.className = 'chapter-title';
-    h.textContent = ch.title;
+    setInline(h, ch.title);
     reader.appendChild(h);
   }
 
@@ -352,14 +403,15 @@ function renderChapter(idx, pos = {}) {
     let el = null;
     if (b.t === 'p') {
       el = document.createElement('p');
-      el.className = 'para' + (/^[「『（(]/.test(b.text) ? ' no-indent' : '');
+      // 字下げの判定は記法を剥がした見た目で（｜「…《…》 のような書き出しでも会話文として扱う）
+      el.className = 'para' + (/^[「『（(]/.test(stripRuby(b.text)) ? ' no-indent' : '');
       const span = document.createElement('span');  // マーカーを行単位で塗るための内側要素
-      span.textContent = b.text;
+      span.appendChild(renderInline(b.text));       // ここで <ruby>/傍点を組む
       el.appendChild(span);
     } else if (b.t === 'h') {
       el = document.createElement('h3');
       el.className = 'section-title';
-      el.textContent = b.text;
+      setInline(el, b.text);
     } else if (b.t === 'gap') {
       el = document.createElement('div');
       el.className = 'scene-gap';
@@ -376,7 +428,7 @@ function renderChapter(idx, pos = {}) {
         const tr = document.createElement('tr');
         row.forEach(cell => {
           const td = document.createElement(ri === 0 ? 'th' : 'td');
-          td.textContent = cell;
+          setInline(td, cell);
           tr.appendChild(td);
         });
         tbl.appendChild(tr);
@@ -406,7 +458,7 @@ function renderChapter(idx, pos = {}) {
 function updateChapterNav() {
   if (!book) return;
   const ch = book.chapters[currentChapter];
-  document.getElementById('ch-title-nav').textContent = ch.title;
+  document.getElementById('ch-title-nav').textContent = stripRuby(ch.title);
   document.getElementById('ch-counter').textContent = `${currentChapter + 1} / ${book.chapters.length}`;
   document.getElementById('btn-prev-ch').disabled = currentChapter === 0;
   document.getElementById('btn-next-ch').disabled = currentChapter === book.chapters.length - 1;
@@ -448,7 +500,7 @@ function openBook(record) {
   left.innerHTML = SHELF_ICON;
   left.dataset.mode = 'shelf';
   left.setAttribute('aria-label', '本棚へ戻る');
-  document.getElementById('header-title').textContent = book.title;
+  document.getElementById('header-title').textContent = stripRuby(book.title);
   updateHeaderHeight();   // タイトル反映後のヘッダー実高で、進捗バーの位置を決める
 
   buildToc();
@@ -1035,7 +1087,7 @@ document.getElementById('btn-make-series').addEventListener('click', async () =>
     badge.textContent = '#' + (ep == null ? (i + 1) : ep);
     const t = document.createElement('span');
     t.className = 'series-order-title';
-    t.textContent = p.title;
+    t.textContent = stripRuby(p.title);
     row.append(badge, t);
     order.appendChild(row);
   });
@@ -1090,7 +1142,7 @@ function buildEpisodeLink(rec, dir) {
   label.textContent = dir > 0 ? '次の話' : '前の話';
   const t = document.createElement('div');
   t.className = 'ep-title';
-  t.textContent = (dir > 0 ? '▶ ' : '◀ ') + rec.title;
+  t.textContent = (dir > 0 ? '▶ ' : '◀ ') + stripRuby(rec.title);
   card.append(label, t);
   card.addEventListener('click', () => openRecord(rec));
   return card;
@@ -1282,7 +1334,7 @@ function buildBookMain(rec, withTags) {
 
   const title = document.createElement('div');
   title.className = 'book-title';
-  title.textContent = rec.title;
+  title.textContent = stripRuby(rec.title);   // カードは素の文字列（ルビ記法は見せない）
 
   const meta = document.createElement('div');
   meta.className = 'book-meta';
@@ -1355,7 +1407,7 @@ function buildBookCard(rec, leftEl, withTags, removeFromSeries) {
     if (removeFromSeries) {
       // シリーズから外すだけ（本は本棚に残す）
       const sname = rec.series;
-      if (!confirm(`「${rec.title}」をシリーズから外しますか？（本は本棚に残ります）`)) return;
+      if (!confirm(`「${stripRuby(rec.title)}」をシリーズから外しますか？（本は本棚に残ります）`)) return;
       delete rec.series;
       delete rec.episode;
       await dbPut(rec).catch(err => console.error('unlink failed', err));
@@ -1368,7 +1420,7 @@ function buildBookCard(rec, leftEl, withTags, removeFromSeries) {
       renderShelf();
       return;
     }
-    if (!confirm(`「${rec.title}」を本棚から削除しますか？`)) return;
+    if (!confirm(`「${stripRuby(rec.title)}」を本棚から削除しますか？`)) return;
     await dbDelete(rec.id).catch(err => console.error('delete failed', err));
     localStorage.removeItem('bm_' + rec.id);
     if (localStorage.getItem('noovel_last') === rec.id) localStorage.removeItem('noovel_last');
@@ -1407,7 +1459,7 @@ async function renderShelf(animate) {
   let shown = currentTag ? books.filter(b => recTags(b).includes(currentTag)) : books;
   if (shelfSearch) {
     const q = shelfSearch.toLowerCase();
-    shown = shown.filter(b => (b.title || '').toLowerCase().includes(q));
+    shown = shown.filter(b => stripRuby(b.title).toLowerCase().includes(q));   // 検索は見えている文字列で
   }
 
   // モード別の出し分け：
@@ -1452,7 +1504,7 @@ async function renderShelf(animate) {
     label.textContent = '▶';
     const t = document.createElement('span');
     t.className = 'resume-title';
-    t.textContent = lastRec.title;
+    t.textContent = stripRuby(lastRec.title);
     const meta = document.createElement('span');
     meta.className = 'resume-meta';
     meta.textContent = Math.round(bookProgress(lastRec) * 100) + '%';
@@ -1638,9 +1690,10 @@ function pressMenuChapterMode(blk) {
 let pendingSplit = null;      // { c, i, src }
 let splitTitleDirty = false;  // ユーザーが見出し欄を触ったか（トグルで初期値を入れ替えてよいかの判断）
 
-// 見出しの初期値。長い段落をそのまま見出しにしないよう先頭40文字で切る
+// 見出しの初期値。長い段落をそのまま見出しにしないよう先頭40文字で切る。
+// 入力欄には素の文字列を出したいので、ルビ記法は剥がしてから切る
 function splitTitleFrom(text) {
-  const t = (text || '').trim();
+  const t = stripRuby(text).trim();
   return t.length > 40 ? t.slice(0, 40) + '…' : t;
 }
 
@@ -1724,7 +1777,7 @@ async function mergeChapterHere() {
   hidePressMenu();   // confirm の裏にメニューが残らないように先に畳む
 
   const msg = title
-    ? `「${title}」を前の章と結合します。見出しは本文の段落として残ります。`
+    ? `「${stripRuby(title)}」を前の章と結合します。見出しは本文の段落として残ります。`
     : 'この章を前の章と結合します。';
   if (!confirm(msg)) return;
 
@@ -1844,8 +1897,8 @@ async function renameChapterFromToc(i) {
     // 表示中の章なら、本文の見出しと章ナビの表示も直す
     // （updateChapterNav は前後の話リンクを足し直してしまうので、必要な2箇所だけ触る）
     const h = document.querySelector('#reader .chapter-title');
-    if (h) h.textContent = title;
-    document.getElementById('ch-title-nav').textContent = title;
+    if (h) setInline(h, title);
+    document.getElementById('ch-title-nav').textContent = stripRuby(title);
   }
   showToast('見出しを変えました');
 }
@@ -1982,15 +2035,16 @@ document.querySelectorAll('.toc-tab').forEach(btn => {
 
 function buildToc() {
   tocTab = 'toc';
-  document.getElementById('toc-book-title').textContent = book.title;
+  document.getElementById('toc-book-title').textContent = stripRuby(book.title);
   renderTocPanel();
 }
 
+// しおり・マーカー一覧に出す引用。ルビ記法は剥がして親文字だけ見せる
 function markQuote(m) {
   const ch = book.chapters[m.ch];
   if (!ch) return '';
   const b = ch.blocks[m.blk];
-  const t = (b && b.text) || '';
+  const t = stripRuby((b && b.text) || '');
   return t.length > 40 ? t.slice(0, 40) + '…' : t;
 }
 
@@ -2011,7 +2065,7 @@ function renderTocPanel() {
     book.chapters.forEach((ch, i) => {
       const btn = document.createElement('button');
       btn.className = 'toc-item';
-      btn.textContent = ch.title || `第${i + 1}章`;
+      btn.textContent = stripRuby(ch.title) || `第${i + 1}章`;
       btn.addEventListener('click', () => {
         if (tocLongPressed) { tocLongPressed = false; return; }   // 長押し直後の click は食う
         renderChapter(i);
@@ -2065,7 +2119,7 @@ function renderTocPanel() {
     const where = document.createElement('div');
     where.className = 'mark-where';
     const chName = document.createElement('span');
-    chName.textContent = (book.chapters[m.ch] && book.chapters[m.ch].title) || `第${m.ch + 1}章`;
+    chName.textContent = stripRuby(book.chapters[m.ch] && book.chapters[m.ch].title) || `第${m.ch + 1}章`;
     const when = document.createElement('span');
     when.textContent = formatDate(m.at);
     where.append(chName, when);
@@ -2197,7 +2251,7 @@ document.getElementById('file-input').addEventListener('change', async e => {
   if (single && lastRec) {
     showToast(lastRec.series
       ? `「${lastRec.series}」の #${lastRec.episode} として取り込みました`
-      : `「${lastRec.title}」を取り込みました`);
+      : `「${stripRuby(lastRec.title)}」を取り込みました`);
   } else if (!single && okCount) {
     showToast(`${okCount}冊を取り込みました` + (seriesCount ? `（シリーズ判定 ${seriesCount}冊）` : ''));
   }
@@ -2236,7 +2290,7 @@ document.getElementById('btn-paste-import').addEventListener('click', () => {
   document.getElementById('paste-text').value = '';
   document.getElementById('paste-title').value = '';
   importContent(text, name, '')
-    .then(rec => { renderShelf(); showToast(`「${rec.title}」を取り込みました`); })
+    .then(rec => { renderShelf(); showToast(`「${stripRuby(rec.title)}」を取り込みました`); })
     .catch(err => { console.error(err); alert('取り込みに失敗しました：' + err.message); });
 });
 
@@ -2271,7 +2325,7 @@ function seekTarget() {
     seeking = true;
     const t = seekTarget();
     document.getElementById('seek-preview-ch').textContent =
-      book.chapters[t.ch].title || `${t.ch + 1} / ${book.chapters.length}`;
+      stripRuby(book.chapters[t.ch].title) || `${t.ch + 1} / ${book.chapters.length}`;
     document.getElementById('seek-preview-pct').textContent = '全体 ' + Math.round(t.v * 100) + '%';
     document.getElementById('seek-pct').textContent = Math.round(t.v * 100) + '%';
     seek.style.setProperty('--fill', (t.v * 100) + '%');

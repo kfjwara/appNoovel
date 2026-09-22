@@ -7,6 +7,20 @@
 // book = { title, subtitle, author, chapters:[{ title, blocks }] }
 // block = {t:'p',text} | {t:'h',text} | {t:'table',rows} | {t:'gap',n?}（n=元の空行数、表示の空きに反映）
 
+// ===== ルビ記法（青空文庫式） =====
+// 本文に埋め込むルビは ｜親文字《読み》 の1つだけ。｜（U+FF5C）は必須で、
+// ｜の無い《…》はルビと見なさず平文のまま置く（pixiv小説は《スキル名》を強調に使うため）。
+// 親文字・読みに ｜《》 は入れられない。入っている文字列は記法として解釈せずそのまま残る。
+// 描画（<ruby>/傍点の組み立て）は app.js の renderInline。ここは「剥がす」側だけ持つ。
+const RUBY_RE = /｜([^｜《》]+)《([^《》]*)》/g;
+
+// ルビ記法を剥がして親文字だけ残す。
+// 目次・しおりの引用・本棚カードなど「素の文字列を見せる場所」と、文字数カウントで使う。
+function stripRuby(text) {
+  if (!text) return '';
+  return String(text).replace(RUBY_RE, '$1');
+}
+
 // 見出しスタイル定義。rank が小さいほど上位（章になりやすい）。
 // strong=true のスタイルが1つでも活性なら、素の短行見出し推定(plainShort)は行わない。
 const HEADING_STYLES = [
@@ -21,11 +35,12 @@ const HEADING_STYLES = [
 ];
 
 // 見出しとして成立する行か（md記法は無条件、それ以外は短く文末記号で終わらない行のみ）
+// 長さはルビ記法を剥がしてから測る（ルビを振っただけで見出し判定が変わらないように）
 function matchHeadingStyle(t) {
   for (const s of HEADING_STYLES) {
     if (!s.re.test(t)) continue;
     if (s.reject && s.reject.test(t)) continue;
-    if (!s.md && (t.length > 40 || /[。、．，]$/.test(t))) return null;
+    if (!s.md && (stripRuby(t).length > 40 || /[。、．，]$/.test(t))) return null;
     return s;
   }
   return null;
@@ -51,11 +66,13 @@ function plainShortCandidates(lines) {
   const last = lastNonBlankIndex(lines);
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i].trim();
-    if (!t || t.length > 30) continue;
+    // 長さ・先頭末尾の記号はルビ記法を剥がした見た目で判定する
+    const st = stripRuby(t);
+    if (!t || st.length > 30) continue;
     if (i === last) continue;                          // 巻末の署名行は見出しにしない
-    if (/[。．！？…、，」』）】]$/.test(t)) continue;   // 文末記号で終わる行は本文
-    if (/^[「『（(＜<―─＝=]/.test(t)) continue;         // 会話・括弧・罫線は本文
-    if (!/[0-9０-９A-Za-zａ-ｚＡ-Ｚぁ-んァ-ヶ一-龠々]/.test(t)) continue; // 記号だけの行（「◇」等の場面区切り）は見出しにしない
+    if (/[。．！？…、，」』）】]$/.test(st)) continue;   // 文末記号で終わる行は本文
+    if (/^[「『（(＜<―─＝=]/.test(st)) continue;        // 会話・括弧・罫線は本文
+    if (!/[0-9０-９A-Za-zａ-ｚＡ-Ｚぁ-んァ-ヶ一-龠々]/.test(st)) continue; // 記号だけの行（「◇」等の場面区切り）は見出しにしない
     if (t.includes('\t') || /^\|.+\|$/.test(t)) continue; // 表
     if (i > 0 && lines[i - 1].trim()) continue;        // 直前に空行が必要
     if (matchHeadingStyle(t)) continue;                // 記号つきスタイルはそっちで扱う
@@ -185,11 +202,12 @@ function convertText(raw, stem, opts) {
     if (!t) { preBody.push(l); continue; }   // 空行は本文へ残す（章無し作品で場面転換のgapが消えないように）
     const am = t.match(/^(?:著者|作者|author)[:：]\s*(.+)$/i);
     if (am && !author) { author = am[1].trim(); continue; }
-    if (!title && preNonBlank.length <= 3 && t.length <= 40 && !/[。！？]$/.test(t)) {
+    const st = stripRuby(t);   // 長さの判定はルビ記法を剥がした見た目で
+    if (!title && preNonBlank.length <= 3 && st.length <= 40 && !/[。！？]$/.test(t)) {
       title = cleanInline(t); metaLines++; continue;
     }
     if (title && !subtitle && metaLines >= 1 && preNonBlank.length <= 3 &&
-        (/^[――─〜~]/.test(t) || t.length <= 30) && !/[。！？]$/.test(t)) {
+        (/^[――─〜~]/.test(t) || st.length <= 30) && !/[。！？]$/.test(t)) {
       subtitle = cleanInline(t); metaLines++; continue;
     }
     preBody.push(l);
@@ -338,4 +356,4 @@ function parseNoovelJSON(raw) {
   };
 }
 
-if (typeof module !== 'undefined') module.exports = { convertText, parseNoovelJSON, pdfPagesToText };
+if (typeof module !== 'undefined') module.exports = { convertText, parseNoovelJSON, pdfPagesToText, stripRuby, RUBY_RE };
