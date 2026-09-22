@@ -13,6 +13,7 @@
 //   remapAnchor(anchor, op)             → 付け替えた {ch, blk, ...}
 //
 // op: { type:'split', c, i, keepBlock } / { type:'merge', c, off } / { type:'rename', c }
+//     { type:'delete', c, i, chapterRemoved, prevLen } / { type:'insert', c, i, newChapter }
 // 入力の chapters・blocks・ブロックは一切書き換えない（新しい配列を返す）。
 
 function chapterOpError(msg) {
@@ -67,6 +68,42 @@ function mergeChapter(chapters, c, opts) {
   return out;
 }
 
+// c章の i ブロックを消すと、その章ごと消えるか（＝最後の1ブロックで、かつ章が2つ以上ある）
+function deleteRemovesChapter(chapters, c) {
+  if (!Array.isArray(chapters) || !chapters[c]) return false;
+  return (chapters[c].blocks || []).length === 1 && chapters.length > 1;
+}
+
+// c章の i ブロックを消す。gap も消せる（余白を詰める用途）。
+// 空になった章は消すが、本に章が1つしか無いときだけは空の blocks で残す（本を消さないため）
+function deleteBlock(chapters, c, i) {
+  if (!Array.isArray(chapters) || !chapters[c]) throw chapterOpError('章番号が範囲外です');
+  const blocks = chapters[c].blocks || [];
+  if (!Number.isInteger(i) || i < 0 || i >= blocks.length) throw chapterOpError('その段落は消せません');
+  const rest = blocks.slice(0, i).concat(blocks.slice(i + 1));
+  const out = chapters.slice();
+  if (!rest.length && chapters.length > 1) { out.splice(c, 1); return out; }
+  out[c] = { ...chapters[c], blocks: rest };
+  return out;
+}
+
+// deleteBlock の逆。opts.asNewChapter=true なら c の位置に章ごと作り直す（opts.title が見出し）
+function insertBlock(chapters, c, i, block, opts) {
+  const o = opts || {};
+  if (!Array.isArray(chapters) || !block) throw chapterOpError('戻せる段落がありません');
+  const out = chapters.slice();
+  if (o.asNewChapter) {
+    if (c < 0 || c > chapters.length) throw chapterOpError('章番号が範囲外です');
+    out.splice(c, 0, { title: o.title == null ? '' : String(o.title), blocks: [block] });
+    return out;
+  }
+  if (!chapters[c]) throw chapterOpError('章番号が範囲外です');
+  const blocks = chapters[c].blocks || [];
+  if (!Number.isInteger(i) || i < 0 || i > blocks.length) throw chapterOpError('その位置には戻せません');
+  out[c] = { ...chapters[c], blocks: blocks.slice(0, i).concat([block], blocks.slice(i)) };
+  return out;
+}
+
 function renameChapter(chapters, c, title) {
   if (!Array.isArray(chapters) || !chapters[c]) throw chapterOpError('章番号が範囲外です');
   const out = chapters.slice();
@@ -106,6 +143,32 @@ function remapAnchor(anchor, op) {
     return out;
   }
 
+  if (op.type === 'delete') {
+    if (op.chapterRemoved) {             // 章ごと消えた
+      if (ch < op.c) return out;
+      if (ch > op.c) { out.ch = ch - 1; return out; }
+      // 消えた章を指していたアンカーは、前の章の末尾へ寄せる（先頭章なら新しい先頭へ）
+      if (op.c === 0) { out.ch = 0; if (hasBlk) out.blk = 0; return out; }
+      out.ch = op.c - 1;
+      if (hasBlk) out.blk = Math.max(0, (op.prevLen || 0) - 1);
+      return out;
+    }
+    if (ch !== op.c || !hasBlk) return out;
+    // blk===i は「消えた段落の次」を指したまま（末尾なら clampAnchor が引き戻す）
+    if (blk > op.i) out.blk = blk - 1;
+    return out;
+  }
+
+  if (op.type === 'insert') {
+    if (op.newChapter) {                 // 章ごと戻した
+      if (ch >= op.c) out.ch = ch + 1;
+      return out;
+    }
+    if (ch !== op.c || !hasBlk) return out;
+    if (blk >= op.i) out.blk = blk + 1;
+    return out;
+  }
+
   return out;
 }
 
@@ -140,6 +203,7 @@ function isEffectiveStart(blocks, blk) {
 if (typeof module !== 'undefined') {
   module.exports = {
     splitChapter, mergeChapter, mergeOffset, renameChapter,
+    deleteBlock, insertBlock, deleteRemovesChapter,
     remapAnchor, remapAnchors, clampAnchor, isEffectiveStart,
   };
 }

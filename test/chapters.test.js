@@ -9,6 +9,7 @@
   const api = isNode ? require('../js/chapters.js') : global;
   const {
     splitChapter, mergeChapter, mergeOffset, renameChapter,
+    deleteBlock, insertBlock, deleteRemovesChapter,
     remapAnchor, remapAnchors, clampAnchor, isEffectiveStart,
   } = api;
 
@@ -154,6 +155,171 @@
   t('remap: 知らない op でもアンカーを壊さない', () => {
     eq(remapAnchor({ ch: 2, blk: 5, at: 1 }, { type: 'nope' }), { ch: 2, blk: 5, at: 1 });
     eq(remapAnchor({ ch: 2, blk: 5 }, null), { ch: 2, blk: 5 });
+  });
+
+  // ===== deleteBlock / insertBlock =====
+
+  t('delete: ブロックが1つ消え、残りは詰まる', () => {
+    const out = deleteBlock(sample(), 0, 3);
+    eq(out.length, 2, '章の数は変わらない');
+    eq(out[0].blocks, [P('a0'), P('a1'), G(2), P('a4'), P('a5')]);
+    eq(out[1], sample()[1], '他の章はそのまま');
+  });
+
+  t('delete: gap も消せる（余白を詰める用途）', () => {
+    eq(deleteBlock(sample(), 0, 2)[0].blocks, [P('a0'), P('a1'), P('a3'), P('a4'), P('a5')]);
+  });
+
+  t('delete: 空になった章は消える（章が2つ以上あるとき）', () => {
+    const src = [{ title: 'A', blocks: [P('a')] }, { title: 'B', blocks: [P('b0'), P('b1')] }];
+    ok(deleteRemovesChapter(src, 0), '章ごと消える判定');
+    const out = deleteBlock(src, 0, 0);
+    eq(out.length, 1);
+    eq(out[0].title, 'B');
+  });
+
+  t('delete: 章が1つだけなら空 blocks で残す（本を消さない）', () => {
+    const src = [{ title: 'A', blocks: [P('a')] }];
+    ok(!deleteRemovesChapter(src, 0), '章は消さない判定');
+    const out = deleteBlock(src, 0, 0);
+    eq(out.length, 1);
+    eq(out[0], { title: 'A', blocks: [] });
+  });
+
+  t('delete: 範囲外・非整数は例外／入力は不変', () => {
+    throws(() => deleteBlock(sample(), 0, -1));
+    throws(() => deleteBlock(sample(), 0, 6));
+    throws(() => deleteBlock(sample(), 0, 1.5));
+    throws(() => deleteBlock(sample(), 9, 0));
+    const src = sample();
+    const snap = JSON.stringify(src);
+    deleteBlock(src, 0, 3);
+    eq(JSON.stringify(src), snap);
+  });
+
+  t('insert: 指定位置に差し込む／末尾にも入る', () => {
+    eq(insertBlock(sample(), 0, 3, P('NEW'))[0].blocks,
+      [P('a0'), P('a1'), G(2), P('NEW'), P('a3'), P('a4'), P('a5')]);
+    eq(insertBlock(sample(), 1, 2, P('NEW'))[1].blocks, [P('b0'), P('b1'), P('NEW')]);
+  });
+
+  t('insert: asNewChapter で章ごと作り直す', () => {
+    const src = [{ title: 'B', blocks: [P('b0')] }];
+    const out = insertBlock(src, 0, 0, P('a'), { asNewChapter: true, title: 'A' });
+    eq(out.map(c => c.title), ['A', 'B']);
+    eq(out[0].blocks, [P('a')]);
+    // 末尾に章を戻す
+    eq(insertBlock(src, 1, 0, P('z'), { asNewChapter: true, title: 'Z' }).map(c => c.title), ['B', 'Z']);
+  });
+
+  t('insert: 範囲外は例外／入力は不変', () => {
+    throws(() => insertBlock(sample(), 0, 99, P('x')));
+    throws(() => insertBlock(sample(), 9, 0, P('x')));
+    throws(() => insertBlock(sample(), 0, 0, null));
+    throws(() => insertBlock(sample(), 5, 0, P('x'), { asNewChapter: true }));
+    const src = sample();
+    const snap = JSON.stringify(src);
+    insertBlock(src, 0, 3, P('x'));
+    eq(JSON.stringify(src), snap);
+  });
+
+  t('往復: delete → insert でブロック列が完全に戻る', () => {
+    const src = sample();
+    for (let i = 0; i < src[0].blocks.length; i++) {
+      const removed = src[0].blocks[i];
+      const back = insertBlock(deleteBlock(src, 0, i), 0, i, removed);
+      eq(back, src, 'i=' + i);
+    }
+  });
+
+  t('往復: 章ごと消えた場合も asNewChapter で戻る', () => {
+    const src = [{ title: 'A', blocks: [P('a')] }, { title: 'B', blocks: [P('b')] }];
+    const gone = deleteBlock(src, 0, 0);
+    eq(gone.length, 1);
+    eq(insertBlock(gone, 0, 0, P('a'), { asNewChapter: true, title: 'A' }), src);
+  });
+
+  // ===== remapAnchor: delete / insert =====
+
+  const DEL = { type: 'delete', c: 1, i: 2, chapterRemoved: false };
+
+  t('remap/delete: 他の章は動かない', () => {
+    eq(remapAnchor({ ch: 0, blk: 5 }, DEL), { ch: 0, blk: 5 });
+    eq(remapAnchor({ ch: 2, blk: 0 }, DEL), { ch: 2, blk: 0 });
+  });
+
+  t('remap/delete: 消した位置より前はそのまま、後ろは -1', () => {
+    eq(remapAnchor({ ch: 1, blk: 0 }, DEL), { ch: 1, blk: 0 });
+    eq(remapAnchor({ ch: 1, blk: 1 }, DEL), { ch: 1, blk: 1 });
+    eq(remapAnchor({ ch: 1, blk: 3 }, DEL), { ch: 1, blk: 2 });
+    eq(remapAnchor({ ch: 1, blk: 9, at: 7 }, DEL), { ch: 1, blk: 8, at: 7 });
+  });
+
+  t('remap/delete: blk===i は同じ番号のまま（＝次の段落を指す）', () => {
+    eq(remapAnchor({ ch: 1, blk: 2, at: 1 }, DEL), { ch: 1, blk: 2, at: 1 });
+  });
+
+  t('remap/delete: 末尾を消したアンカーは clamp で手前に寄る', () => {
+    const chapters = [{ title: 'c0', blocks: [P('x0'), P('x1'), P('x2')] }];
+    const op = { type: 'delete', c: 0, i: 2, chapterRemoved: false };
+    const next = deleteBlock(chapters, 0, 2);
+    eq(remapAnchors([{ ch: 0, blk: 2 }], op, next), [{ ch: 0, blk: 1 }]);
+  });
+
+  t('remap/delete: 章ごと消えたら後ろの章は -1、その章のアンカーは前章の末尾へ', () => {
+    const op = { type: 'delete', c: 1, i: 0, chapterRemoved: true, prevLen: 4 };
+    eq(remapAnchor({ ch: 0, blk: 1 }, op), { ch: 0, blk: 1 });
+    eq(remapAnchor({ ch: 1, blk: 0, at: 5 }, op), { ch: 0, blk: 3, at: 5 });
+    eq(remapAnchor({ ch: 2, blk: 1 }, op), { ch: 1, blk: 1 });
+    eq(remapAnchor({ ch: 1, ratio: 0.5 }, op), { ch: 0, ratio: 0.5 }, 'blk 無しは ch だけ');
+  });
+
+  t('remap/delete: 先頭章が丸ごと消えたら新しい先頭へ', () => {
+    const op = { type: 'delete', c: 0, i: 0, chapterRemoved: true, prevLen: 0 };
+    eq(remapAnchor({ ch: 0, blk: 0, at: 1 }, op), { ch: 0, blk: 0, at: 1 });
+    eq(remapAnchor({ ch: 1, blk: 3 }, op), { ch: 0, blk: 3 });
+  });
+
+  const INS = { type: 'insert', c: 1, i: 2, newChapter: false };
+
+  t('remap/insert: 差し込み位置以降が +1、それ以外は動かない', () => {
+    eq(remapAnchor({ ch: 1, blk: 1 }, INS), { ch: 1, blk: 1 });
+    eq(remapAnchor({ ch: 1, blk: 2 }, INS), { ch: 1, blk: 3 });
+    eq(remapAnchor({ ch: 1, blk: 5, at: 3 }, INS), { ch: 1, blk: 6, at: 3 });
+    eq(remapAnchor({ ch: 0, blk: 5 }, INS), { ch: 0, blk: 5 });
+    eq(remapAnchor({ ch: 2, blk: 0 }, INS), { ch: 2, blk: 0 });
+  });
+
+  t('remap/insert: 章ごと戻したら c 以降の章は +1', () => {
+    const op = { type: 'insert', c: 1, i: 0, newChapter: true };
+    eq(remapAnchor({ ch: 0, blk: 2 }, op), { ch: 0, blk: 2 });
+    eq(remapAnchor({ ch: 1, blk: 0 }, op), { ch: 2, blk: 0 });
+    eq(remapAnchor({ ch: 3, blk: 1 }, op), { ch: 4, blk: 1 });
+  });
+
+  t('remap: delete → insert はブロック内の付け替えとして逆写像になる', () => {
+    const chapters = [{ title: 'c0', blocks: [P('x0'), P('x1'), P('x2'), P('x3')] }];
+    const marks = [
+      { ch: 0, blk: 0, at: 1 }, { ch: 0, blk: 1, at: 2 },
+      { ch: 0, blk: 2, at: 3 }, { ch: 0, blk: 3, at: 4 },
+    ];
+    const delOp = { type: 'delete', c: 0, i: 1, chapterRemoved: false };
+    const afterDel = deleteBlock(chapters, 0, 1);
+    const aDel = remapAnchors(marks, delOp, afterDel);
+    eq(aDel, [
+      { ch: 0, blk: 0, at: 1 },
+      { ch: 0, blk: 1, at: 2 },   // 消えた段落を指していたので「次」を指す
+      { ch: 0, blk: 1, at: 3 },
+      { ch: 0, blk: 2, at: 4 },
+    ]);
+    const afterIns = insertBlock(afterDel, 0, 1, P('x1'));
+    eq(afterIns, chapters, 'ブロック列は完全に戻る');
+    eq(remapAnchors(aDel, { type: 'insert', c: 0, i: 1, newChapter: false }, afterIns), [
+      { ch: 0, blk: 0, at: 1 },
+      { ch: 0, blk: 2, at: 2 },   // 消えた段落そのものを指していた1件だけは戻らない（既知）
+      { ch: 0, blk: 2, at: 3 },
+      { ch: 0, blk: 3, at: 4 },
+    ]);
   });
 
   // ===== remapAnchor: split =====

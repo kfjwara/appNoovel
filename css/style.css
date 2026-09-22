@@ -315,6 +315,12 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   background: #2f2b24;
   border-radius: 10px;
   display: flex;
+  flex-wrap: wrap;                 /* 4ボタンが入らない狭い端末では折り返す（はみ出させない） */
+  justify-content: center;
+  /* width を内容ぴったりに固定するのが要。fixed 要素は既定だと left の値で使える幅が変わるので、
+     max-content にしないと「位置を決める前に測った大きさ」と描画後の大きさがズレる */
+  width: max-content;
+  max-width: calc(100vw - 24px);
   box-shadow: 0 6px 18px rgba(0,0,0,.35);
   z-index: 80;
 }
@@ -323,7 +329,7 @@ body[data-ui="dark"] [data-blk].pressing { background: rgba(255,255,255,.09); }
   border: none;
   color: #f5f0e8;
   font-size: 14px;
-  padding: 11px 16px;
+  padding: 11px 13px;   /* 4ボタンを iPhone SE 幅(375px)に収めるため少し詰めてある */
   cursor: pointer;
   white-space: nowrap;
   font-family: -apple-system, 'Hiragino Sans', sans-serif;
@@ -926,6 +932,20 @@ body.selecting #reader-wrap { padding-bottom: 96px; }   /* 下部バーに本棚
   z-index: 120;
 }
 #toast.show { opacity: .92; transform: translateX(-50%) translateY(0); }
+/* 「元に戻す」付きトースト。ボタンがある時だけ触れるようにする */
+#toast.has-action { pointer-events: auto; padding-right: 8px; }
+.toast-action {
+  margin-left: 12px;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-weight: bold;
+  text-decoration: underline;
+  padding: 4px 8px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
 @media (prefers-reduced-motion: reduce) {
   #toast { transition: none; }
 }

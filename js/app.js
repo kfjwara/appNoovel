@@ -758,12 +758,31 @@ document.querySelectorAll('.sort-item').forEach(b => {
 });
 
 let toastTimer = null;
-function showToast(msg) {
+
+function hideToast() {
+  clearTimeout(toastTimer);
   const t = document.getElementById('toast');
-  t.textContent = msg;
+  t.classList.remove('show', 'has-action');
+}
+
+// action = { label, onClick, ms }（省略可）。付けると押せるトーストになり、既定で5秒出る
+function showToast(msg, action) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;                     // 前のボタンもここで消える
+  t.classList.remove('has-action');
+  let ms = 1800;
+  if (action && action.label && action.onClick) {
+    const b = document.createElement('button');
+    b.className = 'toast-action';
+    b.textContent = action.label;
+    b.addEventListener('click', e => { e.stopPropagation(); hideToast(); action.onClick(); });
+    t.appendChild(b);
+    t.classList.add('has-action');
+    ms = action.ms || 5000;
+  }
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 1800);
+  toastTimer = setTimeout(hideToast, ms);
 }
 
 // タグ絞り込み中は「表示中の本同士の相対順」だけ入れ替え、非表示の本の位置は崩さない
@@ -1515,6 +1534,7 @@ async function renderShelf(animate) {
 function showShelf() {
   saveBookmark();
   hidePressMenu();
+  lastDeletedBlock = null;   // 本を閉じたら「元に戻す」は破棄
   book = null;
   currentFile = null;
   currentRecord = null;
@@ -1560,12 +1580,19 @@ function applyMarkClasses() {
 // ===== 章の手動編集（分割・結合・改名） =====
 // 章を作り替える純関数とアンカーの付け替えは js/chapters.js。ここは永続化と画面反映だけ。
 // op は remapAnchor に渡すものと同じ: {type:'split', c, i, keepBlock} / {type:'merge', c, off}
+// restore（省略可）＝ { bookmarks, markers, bm }。「元に戻す」のように操作前の控えがあるときは、
+// 付け替え計算ではなくその控えをそのまま書き戻す（章ごと消えた場合など、付け替えが可逆でないため）
 // 戻り値＝付け替え後に読者が居る章番号（開いていない本なら null）
-async function applyChapterOp(rec, newChapters, op) {
+async function applyChapterOp(rec, newChapters, op, restore) {
   if (!rec || !rec.noovel || !Array.isArray(newChapters) || !newChapters.length) return null;
   rec.noovel.chapters = newChapters;
-  if (Array.isArray(rec.bookmarks)) rec.bookmarks = remapAnchors(rec.bookmarks, op, newChapters);
-  if (Array.isArray(rec.markers)) rec.markers = remapAnchors(rec.markers, op, newChapters);
+  if (restore) {
+    if (restore.bookmarks) rec.bookmarks = JSON.parse(JSON.stringify(restore.bookmarks));
+    if (restore.markers) rec.markers = JSON.parse(JSON.stringify(restore.markers));
+  } else {
+    if (Array.isArray(rec.bookmarks)) rec.bookmarks = remapAnchors(rec.bookmarks, op, newChapters);
+    if (Array.isArray(rec.markers)) rec.markers = remapAnchors(rec.markers, op, newChapters);
+  }
   rec.chapterCount = newChapters.length;           // 本棚の読了%（bookProgress）がこれで割る
   rec.charCount = bookCharCount(rec.noovel);       // 見出しも文字数に数えているので取り直す
   rec.charCountV = CHARCOUNT_V;
@@ -1574,12 +1601,17 @@ async function applyChapterOp(rec, newChapters, op) {
   // 読書位置は IndexedDB ではなく localStorage 側。キー名が chapter / ch で違うだけで規則は同じ
   const key = 'bm_' + rec.id;
   try {
-    const bm = JSON.parse(localStorage.getItem(key) || 'null');
-    if (bm) {
-      const a = clampAnchor(newChapters, remapAnchor({ ch: bm.chapter || 0, blk: bm.blk }, op));
-      bm.chapter = a.ch;
-      if (typeof a.blk === 'number') bm.blk = a.blk;
-      localStorage.setItem(key, JSON.stringify(bm));
+    if (restore && restore.bm !== undefined) {
+      if (restore.bm) localStorage.setItem(key, JSON.stringify(restore.bm));
+      else localStorage.removeItem(key);
+    } else {
+      const bm = JSON.parse(localStorage.getItem(key) || 'null');
+      if (bm) {
+        const a = clampAnchor(newChapters, remapAnchor({ ch: bm.chapter || 0, blk: bm.blk }, op));
+        bm.chapter = a.ch;
+        if (typeof a.blk === 'number') bm.blk = a.blk;
+        localStorage.setItem(key, JSON.stringify(bm));
+      }
     }
   } catch (e) {}
 
@@ -1708,6 +1740,86 @@ async function mergeChapterHere() {
   const len = ((next[c - 1] && next[c - 1].blocks) || []).length;
   renderChapter(c - 1, { blk: Math.min(joinAt, Math.max(0, len - 1)) });   // 戻した見出し段落の位置へ
   showToast('章を結合しました');
+}
+
+// ===== 段落の削除と「元に戻す」 =====
+// 直前の1件だけ控える。次の削除で上書き、本を閉じたら破棄（showShelf）
+let lastDeletedBlock = null;
+
+// 操作前のアンカー一式を控える（章ごと消える場合は付け替えが可逆でないので、戻すときは控えを書き戻す）
+function snapshotAnchors(rec) {
+  let bm = null;
+  try { bm = JSON.parse(localStorage.getItem('bm_' + rec.id) || 'null'); } catch (e) {}
+  return {
+    bookmarks: JSON.parse(JSON.stringify(rec.bookmarks || [])),
+    markers: JSON.parse(JSON.stringify(rec.markers || [])),
+    bm,
+  };
+}
+
+// 長押しメニューの「削除」。確認は出さず、トーストの「元に戻す」で取り消せるようにする。
+// ただし章ごと・本文ごと消える時だけは気づきにくいので confirm する
+async function deleteBlockHere() {
+  if (!pressBlockEl || !currentRecord || !book) return;
+  const rec = currentRecord;
+  const c = currentChapter;
+  const i = +pressBlockEl.dataset.blk;
+  const chapters = book.chapters;
+  const blocks = (chapters[c] && chapters[c].blocks) || [];
+  if (!blocks[i]) { hidePressMenu(); return; }
+  hidePressMenu();
+
+  if (blocks.length === 1) {
+    const msg = chapters.length === 1
+      ? 'この本の最後の段落です。本文が空になりますが削除しますか？'
+      : 'この章の最後の段落です。章ごと削除しますか？';
+    if (!confirm(msg)) return;
+  }
+
+  const chapterRemoved = deleteRemovesChapter(chapters, c);
+  const op = {
+    type: 'delete', c, i, chapterRemoved,
+    prevLen: c > 0 ? ((chapters[c - 1].blocks || []).length) : 0,
+  };
+  const undo = {
+    id: rec.id, c, i,
+    block: JSON.parse(JSON.stringify(blocks[i])),
+    chapterRemoved,
+    chapterTitle: chapters[c].title || '',
+    anchors: snapshotAnchors(rec),
+  };
+
+  let next;
+  try { next = deleteBlock(chapters, c, i); }
+  catch (err) { showToast(err.message || '段落を消せません'); return; }
+
+  const target = clampAnchor(next, remapAnchor({ ch: c, blk: i }, op));
+  await applyChapterOp(rec, next, op);
+  lastDeletedBlock = undo;
+  renderChapter(target.ch, { blk: target.blk });   // 同じ位置に留まる（末尾なら手前に寄る）
+  showToast('段落を削除しました', { label: '元に戻す', onClick: undoDeleteBlock });
+}
+
+async function undoDeleteBlock() {
+  const u = lastDeletedBlock;
+  lastDeletedBlock = null;
+  if (!u || !book || !currentRecord || currentRecord.id !== u.id) {
+    showToast('元に戻せませんでした');
+    return;
+  }
+  let next;
+  try {
+    next = insertBlock(book.chapters, u.c, u.i, u.block,
+      u.chapterRemoved ? { asNewChapter: true, title: u.chapterTitle } : null);
+  } catch (err) {
+    showToast(err.message || '元に戻せませんでした');
+    return;
+  }
+  // アンカーは控えをそのまま書き戻す（削除で章が消えた場合、付け替えだけでは元に戻らないため）
+  await applyChapterOp(currentRecord, next,
+    { type: 'insert', c: u.c, i: u.i, newChapter: u.chapterRemoved }, u.anchors);
+  renderChapter(u.c, { blk: u.i });
+  showToast('元に戻しました');
 }
 
 // 目次の章を長押し／右クリックで見出しを変更する。
@@ -1858,6 +1970,7 @@ document.getElementById('pm-split').addEventListener('click', () => {
   if (pressMenuChapterMode(+pressBlockEl.dataset.blk) === 'merge') mergeChapterHere();
   else splitChapterHere();
 });
+document.getElementById('pm-delete').addEventListener('click', deleteBlockHere);
 
 // ===== 目次パネル（目次｜しおり｜マーカー） =====
 let tocTab = 'toc';
